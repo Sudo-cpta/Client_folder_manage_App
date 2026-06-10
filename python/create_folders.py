@@ -86,7 +86,12 @@ class DriveManager:
     def folder_exists(self, name: str, parent_id: str) -> Optional[str]:
         """フォルダが存在するか確認し、存在すればIDを返す"""
         query = f"name='{name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        results = self.service.files().list(q=query, fields='files(id, name)').execute()
+        results = self.service.files().list(
+            q=query,
+            fields='files(id, name)',
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
         files = results.get('files', [])
         return files[0]['id'] if files else None
 
@@ -102,20 +107,30 @@ class DriveManager:
             'mimeType': 'application/vnd.google-apps.folder',
             'parents': [parent_id]
         }
-        folder = self.service.files().create(body=metadata, fields='id').execute()
+        folder = self.service.files().create(
+            body=metadata,
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
         print(f'  [作成] {name}')
         return folder['id']
 
     def is_folder_empty(self, folder_id: str) -> bool:
         """フォルダが空か確認"""
         query = f"'{folder_id}' in parents and trashed=false"
-        results = self.service.files().list(q=query, fields='files(id)', pageSize=1).execute()
+        results = self.service.files().list(
+            q=query,
+            fields='files(id)',
+            pageSize=1,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True
+        ).execute()
         return len(results.get('files', [])) == 0
 
     def delete_folder_if_empty(self, folder_id: str, folder_name: str) -> bool:
         """空のフォルダのみ削除"""
         if self.is_folder_empty(folder_id):
-            self.service.files().delete(fileId=folder_id).execute()
+            self.service.files().delete(fileId=folder_id, supportsAllDrives=True).execute()
             print(f'  [削除] {folder_name}')
             return True
         else:
