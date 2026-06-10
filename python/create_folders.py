@@ -68,13 +68,35 @@ def parse_target_type(target: str) -> str:
     return 'common'
 
 
-def should_create_folder(target_type: str, customer_category: str) -> bool:
-    """顧客の区分に基づいてフォルダを作成すべきか判定"""
+# 法人を示すキーワード（顧問先名に含まれていれば法人と判定）
+CORPORATE_KEYWORDS = [
+    '株式会社', '有限会社', '合同会社', '合名会社', '合資会社',
+    '法人', '宗教法人', '医療法人', '社会福祉法人', '学校法人',
+    '社団', '財団', '協会', '組合', '農協', '生協', '連合会',
+    '株）', '有）', '(株)', '(有)', '㈱', '㈲',
+]
+
+
+def is_corporate(customer: dict) -> bool:
+    """顧問先名・区分から法人かどうかを自動判定"""
+    text = (
+        str(customer.get('顧問先名', '')) +
+        str(customer.get('区分', ''))
+    )
+    return any(keyword in text for keyword in CORPORATE_KEYWORDS)
+
+
+def should_create_folder(target_type: str, is_corp: bool) -> bool:
+    """顧客の区分に基づいてフォルダを作成すべきか判定
+
+    target_type: 'common'（共通）, 'corporate'（法人）, 'individual'（個人）
+    is_corp: 顧客が法人ならTrue、個人ならFalse
+    """
     if target_type == 'common':
         return True
-    if target_type == 'corporate' and '法人' in customer_category:
+    if target_type == 'corporate' and is_corp:
         return True
-    if target_type == 'individual' and '個人' in customer_category:
+    if target_type == 'individual' and not is_corp:
         return True
     return False
 
@@ -218,24 +240,26 @@ def main():
     for customer in customers_data:
         code = str(customer.get('顧問先コード', ''))
         name = str(customer.get('顧問先名', ''))
-        category = str(customer.get('区分', ''))
 
         if not code or not name:
             continue
 
+        is_corp = is_corporate(customer)
+        category_label = '法人' if is_corp else '個人'
+
         folder_name = f'{code}_{name}'
-        print(f'\n【{folder_name}】 ({category})')
+        print(f'\n【{folder_name}】 ({category_label})')
 
         # 顧客フォルダを作成
         customer_folder_id = drive.create_folder(folder_name, PARENT_FOLDER_ID)
 
         # テンプレートに基づいてサブフォルダを作成
         for folder in template:
-            if should_create_folder(folder['target_type'], category):
+            if should_create_folder(folder['target_type'], is_corp):
                 subfolder_id = drive.create_folder(folder['name'], customer_folder_id)
 
                 for child in folder['children']:
-                    if should_create_folder(child['target_type'], category):
+                    if should_create_folder(child['target_type'], is_corp):
                         drive.create_folder(child['name'], subfolder_id)
 
     print(f'\n=== 完了 ===')
