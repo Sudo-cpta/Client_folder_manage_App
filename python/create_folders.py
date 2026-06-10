@@ -11,15 +11,18 @@ Googleスプレッドシートから顧客フォルダをGoogleドライブに�
   python create_folders.py --cleanup             # 実行
 
 整理のルール:
-- テンプレートにないフォルダ（旧フォルダ）を顧客フォルダ内から探す
-- ファイルが直接入っているフォルダは、フォルダごと「_アーカイブ」に移動
-- ファイルを直接含まない中間フォルダは、空になったら削除
+- テンプレートシートに載っている名前のフォルダは保護される
+  - タイプ違い（法人顧客内の個人用フォルダ等）は、中にファイルが1つもない場合のみ削除
+- テンプレートにないフォルダ（旧フォルダ）:
+  - ファイルが直接入っているフォルダは、フォルダごと「_アーカイブ」に移動
+  - ファイルを直接含まない中間フォルダは、空になったら削除
 - ファイル自体は絶対に削除しない（移動のみ）
 """
 
 import argparse
 import os
 import re
+import unicodedata
 from typing import Callable, Optional
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -72,6 +75,14 @@ def get_credentials():
 def clean_folder_name(name: str) -> str:
     """フォルダ名からプレフィックス記号を除去"""
     return re.sub(r'^[├└│─┬┤┼\s\-|]+', '', name).strip()
+
+
+def normalize_name(name: str) -> str:
+    """名前比較用の正規化（全角/半角・前後空白の表記ゆれを吸収）
+
+    フォルダ名そのものは変更しない。比較にのみ使用する。
+    """
+    return unicodedata.normalize('NFKC', str(name)).strip()
 
 
 def parse_target_type(target: str) -> str:
@@ -307,7 +318,7 @@ def load_spreadsheet_data(creds):
 def expected_structure(sections: list, is_corp: bool) -> dict:
     """顧客タイプに応じたテンプレート構造を返す
 
-    戻り値: { 親フォルダ名: set(子フォルダ名) }
+    戻り値: { 正規化済み親名: set(正規化済み子名) }
     """
     expected = {}
     for section in sections:
@@ -315,12 +326,34 @@ def expected_structure(sections: list, is_corp: bool) -> dict:
         if parent is None:
             continue
         children = {
-            child['name']
+            normalize_name(child['name'])
             for child in section['children']
             if should_create_folder(child['target_type'], is_corp)
         }
-        expected[parent['name']] = children
+        expected[normalize_name(parent['name'])] = children
     return expected
+
+
+def build_protected_names(sections: list) -> set:
+    """テンプレート内の全フォルダ名（階層・タイプ問わず）の正規化済みセットを返す"""
+    names = set()
+    for section in sections:
+        for parent in section['parents']:
+            names.add(normalize_name(parent['name']))
+        for child in section['children']:
+            names.add(normalize_name(child['name']))
+    return names
+
+
+def has_any_file_recursive(drive: DriveManager, folder_id: str) -> bool:
+    """フォルダ内に再帰的に1つでもファイルがあればTrue"""
+    children = drive.list_children(folder_id)
+    for item in children:
+        if item['mimeType'] != FOLDER_MIME:
+            return True
+        if has_any_file_recursive(drive, item['id']):
+            return True
+    return False
 
 
 def create_all_folders(drive: DriveManager, customers_data: list, sections: list):
@@ -394,13 +427,41 @@ def archive_orphan(drive: DriveManager, folder: dict, parent_id: str,
         drive.delete_folder_if_empty(folder['id'], folder_path)
 
 
+def delete_if_empty_recursive(drive: DriveManager, folder: dict, parent_id: str,
+                               dry_run: bool, path: str = '') -> bool:
+    """フォルダを再帰的に削除（完全に空の場合のみ）。削除したらTrue"""
+    folder_path = f'{path}/{folder["name"]}' if path else folder['name']
+    children = drive.list_children(folder['id'])
+    files = [c for c in children if c['mimeType'] != FOLDER_MIME]
+    subfolders = [c for c in children if c['mimeType'] == FOLDER_MIME]
+
+    if files:
+        return False
+
+    # 全サブフォルダを再帰的に削除試行
+    for sub in subfolders:
+        if not delete_if_empty_recursive(drive, sub, folder['id'], dry_run, folder_path):
+            return False
+
+    if dry_run:
+        print(f'  [削除予定] {folder_path}（タイプ違いテンプレートフォルダ・空）')
+    else:
+        drive.delete_folder_if_empty(folder['id'], folder_path)
+    return True
+
+
 def cleanup_customer(drive: DriveManager, customer_folder_id: str,
-                     expected: dict, dry_run: bool) -> int:
-    """1顧客の旧フォルダを整理。整理対象の数を返す"""
+                     expected: dict, protected: set, dry_run: bool) -> int:
+    """1顧客の旧フォルダを整理。整理対象の数を返す
+
+    判定ルール:
+    - 顧客タイプに合うテンプレート名 (expected) → 保護、中の2階層目をチェック
+    - テンプレートには載っているがタイプ違い (protected) → 再帰的に空なら削除、あれば保持
+    - テンプレートにない → 旧フォルダとして整理（ファイル入りはアーカイブ移動、空は削除）
+    """
     archive_id_holder = {'id': None}
 
     def get_archive_id() -> str:
-        # アーカイブフォルダは必要になった時だけ作成
         if archive_id_holder['id'] is None:
             archive_id_holder['id'] = drive.create_folder(
                 ARCHIVE_FOLDER_NAME, customer_folder_id)
@@ -414,16 +475,39 @@ def cleanup_customer(drive: DriveManager, customer_folder_id: str,
         if folder['name'] == ARCHIVE_FOLDER_NAME:
             continue
 
-        if folder['name'] in expected:
-            # テンプレートにある親フォルダ → 中の2階層目をチェック
-            expected_children = expected[folder['name']]
+        norm_name = normalize_name(folder['name'])
+
+        if norm_name in expected:
+            # 顧客タイプに合う親フォルダ → 中の2階層目をチェック
+            expected_children = expected[norm_name]
             sub_items = drive.list_children(folder['id'])
             sub_folders = [c for c in sub_items if c['mimeType'] == FOLDER_MIME]
             for sub in sub_folders:
-                if sub['name'] not in expected_children:
+                sub_norm = normalize_name(sub['name'])
+                if sub_norm in expected_children:
+                    continue
+                elif sub_norm in protected:
+                    # タイプ違いテンプレート子 → 空なら削除、ファイルあれば保持
+                    if not has_any_file_recursive(drive, sub['id']):
+                        orphan_count += 1
+                        delete_if_empty_recursive(drive, sub, folder['id'],
+                                                  dry_run, folder['name'])
+                    else:
+                        print(f'  [保持] {folder["name"]}/{sub["name"]}（テンプレート名・ファイルあり）')
+                else:
+                    # テンプレートにない子 → 旧フォルダとして整理
                     orphan_count += 1
                     archive_orphan(drive, sub, folder['id'],
                                    get_archive_id, dry_run, folder['name'])
+
+        elif norm_name in protected:
+            # タイプ違いテンプレート親 → 空なら削除、ファイルあれば保持
+            if not has_any_file_recursive(drive, folder['id']):
+                orphan_count += 1
+                delete_if_empty_recursive(drive, folder, customer_folder_id, dry_run)
+            else:
+                print(f'  [保持] {folder["name"]}（テンプレート名・ファイルあり）')
+
         else:
             # テンプレートにない親フォルダ → 旧フォルダとして整理
             orphan_count += 1
@@ -438,7 +522,12 @@ def cleanup_all_customers(drive: DriveManager, customers_data: list,
     """全顧客の旧フォルダを整理"""
     mode_label = 'ドライラン（確認のみ・変更なし）' if dry_run else '実行'
     print(f'\n=== 旧フォルダ整理開始 [{mode_label}] ===')
-    print(f'ルール: ファイル入りフォルダは {ARCHIVE_FOLDER_NAME} へ移動 / 空の中間フォルダは削除\n')
+    print(f'ルール:')
+    print(f'  - テンプレートにない旧フォルダ → ファイル入りは {ARCHIVE_FOLDER_NAME} へ移動、空は削除')
+    print(f'  - タイプ違いテンプレートフォルダ → 空なら削除、ファイルあれば保持\n')
+
+    # テンプレート内の全フォルダ名（タイプ問わず）を保護リストに
+    protected = build_protected_names(sections)
 
     total_orphans = 0
     for customer in customers_data:
@@ -458,7 +547,7 @@ def cleanup_all_customers(drive: DriveManager, customers_data: list,
         print(f'\n【{folder_name}】 ({"法人" if is_corp else "個人"})')
 
         expected = expected_structure(sections, is_corp)
-        count = cleanup_customer(drive, customer_folder_id, expected, dry_run)
+        count = cleanup_customer(drive, customer_folder_id, expected, protected, dry_run)
 
         if count == 0:
             print('  整理対象なし')
