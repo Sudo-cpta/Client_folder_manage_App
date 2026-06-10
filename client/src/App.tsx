@@ -6,7 +6,8 @@ import { FolderTree } from './components/FolderTree';
 import { TemplateEditor } from './components/TemplateEditor';
 import { SyncResults } from './components/SyncResults';
 import { NewCustomerForm } from './components/NewCustomerForm';
-import type { CustomerFolder, FolderTemplate, SyncResult } from './types';
+import { ExcelImport } from './components/ExcelImport';
+import type { CustomerFolder, FolderTemplate, SyncResult, ImportedCustomer } from './types';
 import './styles/App.css';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
@@ -28,6 +29,7 @@ function AppContent() {
   const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [structureLoading, setStructureLoading] = useState(false);
+  const [importedCustomers, setImportedCustomers] = useState<ImportedCustomer[]>([]);
 
   const api = useApi(accessToken, parentFolderId);
 
@@ -94,6 +96,24 @@ function AppContent() {
   // 新規顧客作成
   const handleCreateCustomer = async (name: string) => {
     await api.createCustomer(name, template);
+    loadCustomers();
+  };
+
+  // Excelインポート
+  const handleExcelImport = (customers: ImportedCustomer[], importedTemplate: FolderTemplate[]) => {
+    setImportedCustomers(customers);
+    if (importedTemplate.length > 0) {
+      handleTemplateChange(importedTemplate);
+    }
+  };
+
+  // インポートした顧客を一括作成
+  const handleCreateAllImportedCustomers = async () => {
+    if (importedCustomers.length === 0) return;
+
+    const results = await api.createAllCustomers(importedCustomers, template);
+    setSyncResults(results);
+    setImportedCustomers([]);
     loadCustomers();
   };
 
@@ -211,6 +231,44 @@ function AppContent() {
 
         {/* メインコンテンツ */}
         <div>
+          {/* Excelインポートパネル */}
+          <div className="panel" style={{ marginBottom: '20px' }}>
+            <div className="panel-header">
+              Excelからインポート
+            </div>
+            <div className="panel-content">
+              <ExcelImport
+                onImport={handleExcelImport}
+                loading={api.loading}
+              />
+              {importedCustomers.length > 0 && (
+                <div style={{ marginTop: '15px', padding: '15px', background: '#e8f0fe', borderRadius: '8px' }}>
+                  <strong>インポート済み: {importedCustomers.length} 件の顧客</strong>
+                  <div style={{ marginTop: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {importedCustomers.slice(0, 10).map((c, i) => (
+                      <div key={i} style={{ fontSize: '13px', padding: '2px 0' }}>
+                        {c.folderName} ({c.category || '区分なし'})
+                      </div>
+                    ))}
+                    {importedCustomers.length > 10 && (
+                      <div style={{ fontSize: '13px', color: '#5f6368' }}>
+                        ... 他 {importedCustomers.length - 10} 件
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    style={{ marginTop: '10px' }}
+                    onClick={handleCreateAllImportedCustomers}
+                    disabled={api.loading}
+                  >
+                    {api.loading ? '作成中...' : `${importedCustomers.length} 件の顧客フォルダを一括作成`}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* テンプレート編集パネル */}
           <div className="panel" style={{ marginBottom: '20px' }}>
             <div className="panel-header">

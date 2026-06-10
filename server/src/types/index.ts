@@ -3,6 +3,29 @@ export interface FolderTemplate {
   id: string;
   name: string;
   children: FolderTemplate[];
+  targetType?: 'common' | 'corporate' | 'individual';
+}
+
+// Excelから読み込んだ顧問先データ
+export interface ImportedCustomer {
+  code: string;
+  name: string;
+  category: string;
+  folderName: string;
+}
+
+// Excelから読み込んだフォルダテンプレート行
+export interface ImportedTemplateRow {
+  level: number;
+  folderName: string;
+  description: string;
+  targetType: 'common' | 'corporate' | 'individual';
+}
+
+// Excelインポート結果
+export interface ExcelImportResult {
+  customers: ImportedCustomer[];
+  template: FolderTemplate[];
 }
 
 // 顧客フォルダの型定義

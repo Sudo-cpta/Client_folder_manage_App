@@ -2,6 +2,19 @@ export interface FolderTemplate {
   id: string;
   name: string;
   children: FolderTemplate[];
+  targetType?: 'common' | 'corporate' | 'individual';
+}
+
+export interface ImportedCustomer {
+  code: string;
+  name: string;
+  category: string;
+  folderName: string;
+}
+
+export interface ExcelImportResult {
+  customers: ImportedCustomer[];
+  template: FolderTemplate[];
 }
 
 export interface CustomerFolder {

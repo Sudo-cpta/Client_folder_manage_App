@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { ApiResponse, CustomerFolder, FolderTemplate, SyncResult } from '../types';
+import type { ApiResponse, CustomerFolder, FolderTemplate, SyncResult, ImportedCustomer } from '../types';
 
 export function useApi(accessToken: string | null, parentFolderId: string | null) {
   const [loading, setLoading] = useState(false);
@@ -82,6 +82,17 @@ export function useApi(accessToken: string | null, parentFolderId: string | null
     return result || [];
   }, [fetchApi]);
 
+  const createAllCustomers = useCallback(async (
+    customers: ImportedCustomer[],
+    template: FolderTemplate[]
+  ): Promise<SyncResult[]> => {
+    const result = await fetchApi<SyncResult[]>('/api/create-all-customers', {
+      method: 'POST',
+      body: JSON.stringify({ customers, template }),
+    });
+    return result || [];
+  }, [fetchApi]);
+
   return {
     loading,
     error,
@@ -90,5 +101,6 @@ export function useApi(accessToken: string | null, parentFolderId: string | null
     applyTemplate,
     createCustomer,
     renameSubfolder,
+    createAllCustomers,
   };
 }
