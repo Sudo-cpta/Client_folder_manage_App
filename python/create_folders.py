@@ -5,11 +5,22 @@ Googleスプレッドシートから顧客フォルダをGoogleドライブに�
 1. Google Cloud Consoleで認証情報を作成し、credentials.jsonをこのフォルダに配置
 2. pip install -r requirements.txt
 3. python create_folders.py
+
+旧フォルダの整理（テンプレートにないフォルダをアーカイブ）:
+  python create_folders.py --cleanup --dry-run   # 確認のみ（何も変更しない）
+  python create_folders.py --cleanup             # 実行
+
+整理のルール:
+- テンプレートにないフォルダ（旧フォルダ）を顧客フォルダ内から探す
+- ファイルが直接入っているフォルダは、フォルダごと「_アーカイブ」に移動
+- ファイルを直接含まない中間フォルダは、空になったら削除
+- ファイル自体は絶対に削除しない（移動のみ）
 """
 
+import argparse
 import os
 import re
-from typing import Optional
+from typing import Callable, Optional
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -25,6 +36,11 @@ SCOPES = [
 # === 設定 ===
 SPREADSHEET_ID = '12HwwJpYPv9YKaSvf4n2dsy8-RxvKxv3swzy1x3-CM3A'  # スプレッドシートID
 PARENT_FOLDER_ID = ''  # 親フォルダID（顧客フォルダを作成する場所）
+
+# 旧フォルダ整理で使うアーカイブフォルダ名（顧客フォルダ直下に作成）
+ARCHIVE_FOLDER_NAME = '_アーカイブ'
+
+FOLDER_MIME = 'application/vnd.google-apps.folder'
 
 
 def get_credentials():
@@ -126,7 +142,7 @@ class DriveManager:
 
     def folder_exists(self, name: str, parent_id: str) -> Optional[str]:
         """フォルダが存在するか確認し、存在すればIDを返す"""
-        query = f"name='{name}' and '{parent_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        query = f"name='{name}' and '{parent_id}' in parents and mimeType='{FOLDER_MIME}' and trashed=false"
         results = self.service.files().list(
             q=query,
             fields='files(id, name)',
@@ -145,7 +161,7 @@ class DriveManager:
 
         metadata = {
             'name': name,
-            'mimeType': 'application/vnd.google-apps.folder',
+            'mimeType': FOLDER_MIME,
             'parents': [parent_id]
         }
         folder = self.service.files().create(
@@ -155,6 +171,35 @@ class DriveManager:
         ).execute()
         print(f'  [作成] {name}')
         return folder['id']
+
+    def list_children(self, folder_id: str) -> list:
+        """フォルダ直下の全アイテム（ファイル・フォルダ）を取得"""
+        items = []
+        page_token = None
+        while True:
+            results = self.service.files().list(
+                q=f"'{folder_id}' in parents and trashed=false",
+                fields='nextPageToken, files(id, name, mimeType)',
+                pageSize=1000,
+                pageToken=page_token,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            items.extend(results.get('files', []))
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break
+        return items
+
+    def move_item(self, item_id: str, new_parent_id: str, old_parent_id: str):
+        """ファイルまたはフォルダを別のフォルダに移動"""
+        self.service.files().update(
+            fileId=item_id,
+            addParents=new_parent_id,
+            removeParents=old_parent_id,
+            fields='id',
+            supportsAllDrives=True
+        ).execute()
 
     def is_folder_empty(self, folder_id: str) -> bool:
         """フォルダが空か確認"""
@@ -179,16 +224,8 @@ class DriveManager:
             return False
 
 
-def main():
-    if not PARENT_FOLDER_ID:
-        print('エラー: PARENT_FOLDER_ID を設定してください')
-        print('スクリプト内の PARENT_FOLDER_ID に、顧客フォルダを作成するGoogleドライブのフォルダIDを設定してください')
-        exit(1)
-
-    print('認証中...')
-    creds = get_credentials()
-    drive = DriveManager(creds)
-
+def load_spreadsheet_data(creds):
+    """スプレッドシートから顧客一覧とテンプレート（セクション構造）を読み込む"""
     print('スプレッドシートを読み込み中...')
     gc = gspread.authorize(creds)
     spreadsheet = gc.open_by_key(SPREADSHEET_ID)
@@ -264,7 +301,30 @@ def main():
         for child in section['children']:
             print(f'    📁 {child["name"]} ({child["target_type"]})')
 
-    # 各顧客のフォルダを作成
+    return customers_data, sections
+
+
+def expected_structure(sections: list, is_corp: bool) -> dict:
+    """顧客タイプに応じたテンプレート構造を返す
+
+    戻り値: { 親フォルダ名: set(子フォルダ名) }
+    """
+    expected = {}
+    for section in sections:
+        parent = pick_parent(section['parents'], is_corp)
+        if parent is None:
+            continue
+        children = {
+            child['name']
+            for child in section['children']
+            if should_create_folder(child['target_type'], is_corp)
+        }
+        expected[parent['name']] = children
+    return expected
+
+
+def create_all_folders(drive: DriveManager, customers_data: list, sections: list):
+    """各顧客のフォルダを作成"""
     print(f'\n=== フォルダ作成開始 ===\n')
 
     for customer in customers_data:
@@ -297,6 +357,141 @@ def main():
                     drive.create_folder(child['name'], subfolder_id)
 
     print(f'\n=== 完了 ===')
+
+
+def archive_orphan(drive: DriveManager, folder: dict, parent_id: str,
+                   get_archive_id: Callable[[], str], dry_run: bool, path: str = ''):
+    """旧フォルダを整理する（再帰）
+
+    ルール:
+    - ファイルが直接入っているフォルダ → フォルダごとアーカイブに移動
+    - サブフォルダしかない中間フォルダ → 中を整理してから空なら削除
+    - 完全に空のフォルダ → 削除
+    """
+    folder_path = f'{path}/{folder["name"]}' if path else folder['name']
+    children = drive.list_children(folder['id'])
+    files = [c for c in children if c['mimeType'] != FOLDER_MIME]
+    subfolders = [c for c in children if c['mimeType'] == FOLDER_MIME]
+
+    if files:
+        # ファイルが直接入っている → フォルダごとアーカイブへ移動
+        # （サブフォルダも中身ごと一緒に移動されるのでファイルは失われない）
+        if dry_run:
+            print(f'  [移動予定] {folder_path}（ファイル{len(files)}件）→ {ARCHIVE_FOLDER_NAME}')
+        else:
+            drive.move_item(folder['id'], get_archive_id(), parent_id)
+            print(f'  [移動] {folder_path}（ファイル{len(files)}件）→ {ARCHIVE_FOLDER_NAME}')
+        return
+
+    # ファイルなし → サブフォルダを先に整理
+    for sub in subfolders:
+        archive_orphan(drive, sub, folder['id'], get_archive_id, dry_run, folder_path)
+
+    # 中身がすべて移動・削除されていれば、この中間フォルダを削除
+    if dry_run:
+        print(f'  [削除予定] {folder_path}（ファイルなし）')
+    else:
+        drive.delete_folder_if_empty(folder['id'], folder_path)
+
+
+def cleanup_customer(drive: DriveManager, customer_folder_id: str,
+                     expected: dict, dry_run: bool) -> int:
+    """1顧客の旧フォルダを整理。整理対象の数を返す"""
+    archive_id_holder = {'id': None}
+
+    def get_archive_id() -> str:
+        # アーカイブフォルダは必要になった時だけ作成
+        if archive_id_holder['id'] is None:
+            archive_id_holder['id'] = drive.create_folder(
+                ARCHIVE_FOLDER_NAME, customer_folder_id)
+        return archive_id_holder['id']
+
+    orphan_count = 0
+    top_items = drive.list_children(customer_folder_id)
+    top_folders = [c for c in top_items if c['mimeType'] == FOLDER_MIME]
+
+    for folder in top_folders:
+        if folder['name'] == ARCHIVE_FOLDER_NAME:
+            continue
+
+        if folder['name'] in expected:
+            # テンプレートにある親フォルダ → 中の2階層目をチェック
+            expected_children = expected[folder['name']]
+            sub_items = drive.list_children(folder['id'])
+            sub_folders = [c for c in sub_items if c['mimeType'] == FOLDER_MIME]
+            for sub in sub_folders:
+                if sub['name'] not in expected_children:
+                    orphan_count += 1
+                    archive_orphan(drive, sub, folder['id'],
+                                   get_archive_id, dry_run, folder['name'])
+        else:
+            # テンプレートにない親フォルダ → 旧フォルダとして整理
+            orphan_count += 1
+            archive_orphan(drive, folder, customer_folder_id,
+                           get_archive_id, dry_run)
+
+    return orphan_count
+
+
+def cleanup_all_customers(drive: DriveManager, customers_data: list,
+                          sections: list, dry_run: bool):
+    """全顧客の旧フォルダを整理"""
+    mode_label = 'ドライラン（確認のみ・変更なし）' if dry_run else '実行'
+    print(f'\n=== 旧フォルダ整理開始 [{mode_label}] ===')
+    print(f'ルール: ファイル入りフォルダは {ARCHIVE_FOLDER_NAME} へ移動 / 空の中間フォルダは削除\n')
+
+    total_orphans = 0
+    for customer in customers_data:
+        code = str(customer.get('顧問先コード', ''))
+        name = str(customer.get('顧問先名', ''))
+
+        if not code or not name:
+            continue
+
+        is_corp = is_corporate(customer)
+        folder_name = f'{code}_{name}'
+
+        customer_folder_id = drive.folder_exists(folder_name, PARENT_FOLDER_ID)
+        if not customer_folder_id:
+            continue
+
+        print(f'\n【{folder_name}】 ({"法人" if is_corp else "個人"})')
+
+        expected = expected_structure(sections, is_corp)
+        count = cleanup_customer(drive, customer_folder_id, expected, dry_run)
+
+        if count == 0:
+            print('  整理対象なし')
+        total_orphans += count
+
+    print(f'\n=== 完了: 整理対象 {total_orphans} 件 ===')
+    if dry_run and total_orphans > 0:
+        print('実行するには: python create_folders.py --cleanup')
+
+
+def main():
+    parser = argparse.ArgumentParser(description='顧客フォルダ作成・整理スクリプト')
+    parser.add_argument('--cleanup', action='store_true',
+                        help='テンプレートにない旧フォルダを整理（ファイルはアーカイブへ移動）')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='確認のみ（何も変更しない）。--cleanup と併用')
+    args = parser.parse_args()
+
+    if not PARENT_FOLDER_ID:
+        print('エラー: PARENT_FOLDER_ID を設定してください')
+        print('スクリプト内の PARENT_FOLDER_ID に、顧客フォルダを作成するGoogleドライブのフォルダIDを設定してください')
+        exit(1)
+
+    print('認証中...')
+    creds = get_credentials()
+    drive = DriveManager(creds)
+
+    customers_data, sections = load_spreadsheet_data(creds)
+
+    if args.cleanup:
+        cleanup_all_customers(drive, customers_data, sections, args.dry_run)
+    else:
+        create_all_folders(drive, customers_data, sections)
 
 
 if __name__ == '__main__':
