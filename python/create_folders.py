@@ -101,6 +101,25 @@ def should_create_folder(target_type: str, is_corp: bool) -> bool:
     return False
 
 
+def pick_parent(parents: list, is_corp: bool) -> Optional[dict]:
+    """セクションの親候補から、顧客タイプに合う親を1つ選ぶ
+
+    優先順位: 顧客タイプ一致（法人/個人）> 共通 > なし
+    """
+    wanted = 'corporate' if is_corp else 'individual'
+
+    # 1. 顧客タイプに一致する親
+    for parent in parents:
+        if parent['target_type'] == wanted:
+            return parent
+    # 2. 共通の親
+    for parent in parents:
+        if parent['target_type'] == 'common':
+            return parent
+    # 3. 該当なし（このセクションは作成しない）
+    return None
+
+
 class DriveManager:
     def __init__(self, creds):
         self.service = build('drive', 'v3', credentials=creds)
@@ -202,36 +221,47 @@ def main():
     template_data = template_sheet.get_all_records()
     print(f'テンプレート行数: {len(template_data)}')
 
-    # テンプレートを階層構造に変換
-    template = []
-    current_parent = None
+    # テンプレートをセクション単位に変換
+    # 1セクション = 連続する階層1（親候補）＋それに続く階層2（子）
+    sections = []
+    current_section = None
+    last_was_child = False
 
     for row in template_data:
-        level = int(row.get('階層', 1))
+        raw_level = str(row.get('階層', '')).strip()
         folder_name = clean_folder_name(str(row.get('フォルダ名', '')))
         target_type = parse_target_type(row.get('対象区分', '共通'))
 
-        if not folder_name:
+        if not folder_name or not raw_level:
+            continue
+
+        try:
+            level = int(float(raw_level))
+        except ValueError:
             continue
 
         if level == 1:
-            current_parent = {
+            # 直前が子フォルダだった場合は新しいセクションを開始
+            if current_section is None or last_was_child:
+                current_section = {'parents': [], 'children': []}
+                sections.append(current_section)
+            current_section['parents'].append({
                 'name': folder_name,
                 'target_type': target_type,
-                'children': []
-            }
-            template.append(current_parent)
-        elif level == 2 and current_parent:
-            current_parent['children'].append({
-                'name': folder_name,
-                'target_type': target_type,
-                'children': []
             })
+            last_was_child = False
+        elif level == 2 and current_section is not None:
+            current_section['children'].append({
+                'name': folder_name,
+                'target_type': target_type,
+            })
+            last_was_child = True
 
-    print(f'\nテンプレート構造:')
-    for folder in template:
-        print(f'  📁 {folder["name"]} ({folder["target_type"]})')
-        for child in folder['children']:
+    print(f'\nテンプレート構造（セクション単位）:')
+    for section in sections:
+        parents = ' / '.join(f'{p["name"]}({p["target_type"]})' for p in section['parents'])
+        print(f'  📁 {parents}')
+        for child in section['children']:
             print(f'    📁 {child["name"]} ({child["target_type"]})')
 
     # 各顧客のフォルダを作成
@@ -253,14 +283,18 @@ def main():
         # 顧客フォルダを作成
         customer_folder_id = drive.create_folder(folder_name, PARENT_FOLDER_ID)
 
-        # テンプレートに基づいてサブフォルダを作成
-        for folder in template:
-            if should_create_folder(folder['target_type'], is_corp):
-                subfolder_id = drive.create_folder(folder['name'], customer_folder_id)
+        # セクションごとに、顧客タイプに合う親を1つ選んでフォルダを作成
+        for section in sections:
+            parent = pick_parent(section['parents'], is_corp)
+            if parent is None:
+                continue
 
-                for child in folder['children']:
-                    if should_create_folder(child['target_type'], is_corp):
-                        drive.create_folder(child['name'], subfolder_id)
+            subfolder_id = drive.create_folder(parent['name'], customer_folder_id)
+
+            # 顧客タイプに合う子フォルダ（その区分＋共通）を作成
+            for child in section['children']:
+                if should_create_folder(child['target_type'], is_corp):
+                    drive.create_folder(child['name'], subfolder_id)
 
     print(f'\n=== 完了 ===')
 
