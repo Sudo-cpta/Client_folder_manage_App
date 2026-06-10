@@ -29,3 +29,13 @@ npm-debug.log*
 
 # Testing
 coverage/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# 認証情報（機密・コミット禁止）
+credentials.json
+token.json
