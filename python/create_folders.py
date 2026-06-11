@@ -319,18 +319,21 @@ def expected_structure(sections: list, is_corp: bool) -> dict:
     """顧客タイプに応じたテンプレート構造を返す
 
     戻り値: { 正規化済み親名: set(正規化済み子名) }
+
+    顧客タイプに合う親 + 共通タイプの親を全て含める（セクション内の1つだけではなく）
     """
     expected = {}
     for section in sections:
-        parent = pick_parent(section['parents'], is_corp)
-        if parent is None:
-            continue
+        # 顧客タイプに合う子フォルダ名（共通も含む）
         children = {
             normalize_name(child['name'])
             for child in section['children']
             if should_create_folder(child['target_type'], is_corp)
         }
-        expected[normalize_name(parent['name'])] = children
+        # 顧客タイプに合う親 + 共通タイプの親を全て追加
+        for parent in section['parents']:
+            if should_create_folder(parent['target_type'], is_corp):
+                expected[normalize_name(parent['name'])] = children
     return expected
 
 
