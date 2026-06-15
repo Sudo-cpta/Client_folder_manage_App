@@ -39,3 +39,6 @@ venv/
 # 認証情報（機密・コミット禁止）
 credentials.json
 token.json
+
+# ローカル設定（各環境ごと・コミット禁止）
+config.json

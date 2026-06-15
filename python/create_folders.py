@@ -20,6 +20,7 @@ Googleスプレッドシートから顧客フォルダをGoogleドライブに�
 """
 
 import argparse
+import json
 import os
 import re
 import unicodedata
@@ -37,13 +38,62 @@ SCOPES = [
 ]
 
 # === 設定 ===
-SPREADSHEET_ID = '12HwwJpYPv9YKaSvf4n2dsy8-RxvKxv3swzy1x3-CM3A'  # スプレッドシートID
+# 設定は config.json（git管理外）に保存されます。
+# このスクリプト本体を編集する必要はありません。
+CONFIG_PATH = 'config.json'
+
+# config.json が無い場合に使う初期値
+DEFAULT_SPREADSHEET_ID = '12HwwJpYPv9YKaSvf4n2dsy8-RxvKxv3swzy1x3-CM3A'  # スプレッドシートID
+
+# 実行時に config.json から読み込まれる（main内で設定）
+SPREADSHEET_ID = ''
 PARENT_FOLDER_ID = ''  # 親フォルダID（顧客フォルダを作成する場所）
 
 # 旧フォルダ整理で使うアーカイブフォルダ名（顧客フォルダ直下に作成）
 ARCHIVE_FOLDER_NAME = '_アーカイブ'
 
 FOLDER_MIME = 'application/vnd.google-apps.folder'
+
+
+def load_config() -> dict:
+    """config.json から設定を読み込む。無ければ対話的に作成して保存する。
+
+    スクリプト本体を編集せずに済むよう、設定は別ファイルに分離している。
+    これにより git pull が設定の上書き競合で失敗しなくなる。
+    """
+    config = {}
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f'警告: {CONFIG_PATH} の読み込みに失敗しました（{e}）。再設定します。')
+            config = {}
+
+    # スプレッドシートID（未設定なら初期値を使用）
+    if not config.get('spreadsheet_id'):
+        config['spreadsheet_id'] = DEFAULT_SPREADSHEET_ID
+
+    # 親フォルダID（未設定なら入力を促す）
+    if not config.get('parent_folder_id'):
+        print('--- 初期設定 ---')
+        print('顧客フォルダを作成するGoogleドライブの「親フォルダID」を入力してください。')
+        print('（Googleドライブでフォルダを開き、URLの /folders/ 以降の文字列です）')
+        folder_id = input('親フォルダID: ').strip()
+        if not folder_id:
+            print('エラー: 親フォルダIDが入力されませんでした')
+            exit(1)
+        config['parent_folder_id'] = folder_id
+
+    # 保存（次回以降は入力不要）
+    try:
+        with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        print(f'設定を {CONFIG_PATH} に保存しました。')
+    except OSError as e:
+        print(f'警告: {CONFIG_PATH} の保存に失敗しました（{e}）')
+
+    return config
 
 
 def get_credentials():
@@ -569,10 +619,11 @@ def main():
                         help='確認のみ（何も変更しない）。--cleanup と併用')
     args = parser.parse_args()
 
-    if not PARENT_FOLDER_ID:
-        print('エラー: PARENT_FOLDER_ID を設定してください')
-        print('スクリプト内の PARENT_FOLDER_ID に、顧客フォルダを作成するGoogleドライブのフォルダIDを設定してください')
-        exit(1)
+    # 設定を config.json から読み込む（無ければ対話的に作成）
+    global SPREADSHEET_ID, PARENT_FOLDER_ID
+    config = load_config()
+    SPREADSHEET_ID = config['spreadsheet_id']
+    PARENT_FOLDER_ID = config['parent_folder_id']
 
     print('認証中...')
     creds = get_credentials()
