@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# 認証情報（機密・コミット禁止）
+credentials.json
+token.json
+
+# ローカル設定（各環境ごと・コミット禁止）
+config.json
