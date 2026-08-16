@@ -24,7 +24,7 @@ const base = (year, over = {}) => ({
   weekly: 1, firmSize: 51, regimeId: year === 2025 ? "pre2610" : "post2610",
   kidsCount: 1, uniKids: 0, uniType: "private",
   pHealth: 9.85, pCare: 1.62, pKodomo: 0.23, pPension: 18.30, pKoyo: 0.50,
-  pKokunen: 17920, pKokuhoRate: 12.5, pKokuhoFlat: 66300, pKokuhoCap: 1130000,
+  pKokunen: 17920, kokuhoMode: "estimate", pKokuhoRate: 12.5, pKokuhoFlat: 66300, pKokuhoCap: 1130000,
   pJuminFlat: 5000, pHikazei: 450000, ...over,
 });
 // 「◯◯万円の壁」は社会保険料控除を織り込まない法令上のラインなので、
@@ -149,6 +149,19 @@ ok("多子世帯の壁がある", wl.some(w => w.kind === "tuition"), true);
 const wl25 = walls(base(2025, { role: "child1922", regimeId: "pre2610" }));
 ok("令和7年分では106万円の壁が出る", wl25.some(w => w.amount === 1056000), true);
 ok("令和7年分では160万円の壁が出る", wl25.some(w => w.amount === 1600000), true);
+
+
+console.log("──────── 国民健康保険の2モード ────────");
+const kEst = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "estimate" }));
+const kMan = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "manual" }));
+ok("概算モードは概算フラグが立つ", kEst.kokuhoEstimated, true);
+ok("自治体入力モードは概算フラグが立たない", kMan.kokuhoEstimated, false);
+info("概算モードの国保料（年収140万）", kEst.health.toLocaleString());
+info("自治体入力モード（12.5%/66,300円）の国保料", kMan.health.toLocaleString());
+ok("入力した料率が実際に効いている", kEst.health !== kMan.health, true);
+const kCare = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "estimate", age40: true }));
+ok("40歳以上は介護納付金分が上乗せされる", kCare.health > kEst.health, true);
+ok("賦課限度額113万円が効く", socialInsurance(20000000, base(2026, { weekly: 0, hasSupporter: false })).health, 1130000);
 
 console.log();
 console.table(R.map(([n,g,w,s]) => ({ 検証項目:n, 結果:g, 期待:w, 判定:s })));

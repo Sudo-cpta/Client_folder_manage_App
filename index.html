@@ -332,6 +332,28 @@ button.act:hover { background: var(--surface-2); }
       <select id="regime"></select>
       <span class="note" id="regimeNote"></span>
     </div>
+    <div class="field">
+      <label for="kokuhoMode">国民健康保険料の計算方法</label>
+      <select id="kokuhoMode">
+        <option value="estimate" selected>全国的な水準でざっくり概算する</option>
+        <option value="manual">お住まいの自治体の料率を入力する（正確）</option>
+      </select>
+      <span class="note" id="kokuhoNote"></span>
+    </div>
+  </div>
+
+  <div id="kokuhoManual" hidden>
+    <div class="callout">
+      <div class="ttl">📄 料率の調べ方</div>
+      お住まいの市区町村のホームページで「<b>国民健康保険料 計算方法</b>」または「国民健康保険税 税率」を検索してください。
+      令和8年度から <b>医療分・後期高齢者支援金分・介護納付金分（40〜64歳）・子ども子育て支援納付金分</b> の4区分になっています。
+      下の欄には、<b>あなたに適用される区分の合計</b>を入力してください（40歳未満の方は介護納付金分を除いた合計）。
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="field"><label for="pKokuhoRate">所得割率（％・全区分の合計）</label><input type="number" id="pKokuhoRate" step="0.01" value="12.50"></div>
+      <div class="field"><label for="pKokuhoFlat">均等割（円／年・1人あたり・全区分の合計）</label><input type="number" id="pKokuhoFlat" step="100" value="66300"></div>
+      <div class="field"><label for="pKokuhoCap">賦課限度額（円／年）</label><input type="number" id="pKokuhoCap" step="10000" value="1130000"><span class="note">令和8年度は113万円（医療65万＋支援金26万＋介護17万＋子ども子育て支援3万）</span></div>
+    </div>
   </div>
 
   <details class="adv">
@@ -366,9 +388,6 @@ button.act:hover { background: var(--surface-2); }
       <div class="field"><label for="pPension">厚生年金保険料率（％・労使合計）</label><input type="number" id="pPension" step="0.01" value="18.30"></div>
       <div class="field"><label for="pKoyo">雇用保険料率（％・労働者負担）</label><input type="number" id="pKoyo" step="0.01" value="0.50"><span class="note">一般の事業・令和8年度</span></div>
       <div class="field"><label for="pKokunen">国民年金保険料（円／月）</label><input type="number" id="pKokunen" step="10" value="17920"><span class="note">令和8年度</span></div>
-      <div class="field"><label for="pKokuhoRate">国保 所得割率（％・合計）</label><input type="number" id="pKokuhoRate" step="0.01" value="12.50"><span class="note badge warn">要確認：自治体で大きく異なります</span></div>
-      <div class="field"><label for="pKokuhoFlat">国保 均等割（円／年・1人）</label><input type="number" id="pKokuhoFlat" step="100" value="66300"><span class="note badge warn">要確認：自治体で大きく異なります</span></div>
-      <div class="field"><label for="pKokuhoCap">国保 賦課限度額（円／年）</label><input type="number" id="pKokuhoCap" step="10000" value="1130000"><span class="note">令和8年度</span></div>
       <div class="field"><label for="pJuminFlat">住民税 均等割（円／年）</label><input type="number" id="pJuminFlat" step="100" value="5000"><span class="note">森林環境税1,000円を含む</span></div>
       <div class="field"><label for="pHikazei">住民税 非課税限度額（合計所得・円）</label><input type="number" id="pHikazei" step="10000" value="450000"><span class="note">1級地・扶養親族なしの場合</span></div>
     </div>
@@ -472,6 +491,7 @@ button.act:hover { background: var(--surface-2); }
     <li>基礎控除の上乗せ特例と給与所得控除の5万円上乗せは<b>令和8年分・令和9年分限り</b>です。令和10年分は特例終了後の予定値であり、今後の改正で変わり得ます。</li>
     <li>住民税は前年の所得に対して翌年度に課税されます（例：令和8年分の所得 → 令和9年度の住民税）。本ツールは「その年の収入に対して生じる税額」として表示しています。</li>
     <li>社会保険の適用拡大は、2026年10月に賃金要件（月額8.8万円）が撤廃され、企業規模要件が2027年10月以降に段階的に撤廃されます。</li>
+    <li>国民健康保険料は「概算」と「自治体の料率を入力」の2モードから選べます。既定の概算は全国的な水準の目安であり、桁を掴むためのものです。金額を根拠に判断される場合は、必ずお住まいの市区町村の料率を入力してください。令和8年度から医療分・後期高齢者支援金分・介護納付金分・子ども子育て支援納付金分の4区分となり、賦課限度額の合計は113万円です。</li>
   </ul>
 
   <h3>主な出典</h3>
@@ -601,6 +621,22 @@ const REGIME_BY_YEAR = { 2025:"pre2610", 2026:"post2610", 2027:"post2710", 2028:
 
 const FUYO_NINTEI_LIMIT = 1300000;   // 健康保険の被扶養者認定基準（130万円）
 
+/**
+ * 国民健康保険の「概算モード」で使う全国的な水準の目安。
+ * 令和8年度から 医療分・後期高齢者支援金分・介護納付金分・子ども子育て支援納付金分 の
+ * 4区分になり、賦課限度額の合計は113万円（109万円から引上げ）。
+ * 料率・均等割は自治体ごとに大きく異なるため、あくまで桁を掴むための値。
+ * 正確な試算には「自治体の料率を入力する」モードを使うこと。
+ */
+const KOKUHO_ESTIMATE = {
+  rate: 10.0,        // 所得割率（医療＋支援金＋子ども子育て支援）の目安
+  flat: 50000,       // 均等割（同上・1人あたり年額）の目安
+  careRate: 2.5,     // 介護納付金分（40〜64歳）の所得割率
+  careFlat: 16000,   // 介護納付金分の均等割
+  cap: 1130000,      // 令和8年度の賦課限度額
+  band: 0.30,        // 自治体差の目安（±30%）
+};
+
 /* 健康保険の標準報酬月額（第1〜50級）。厚生年金は88,000〜650,000の範囲。 */
 const STD_GRADES = [58000,68000,78000,88000,98000,104000,110000,118000,126000,134000,
   142000,150000,160000,170000,180000,190000,200000,220000,240000,260000,280000,300000,
@@ -697,6 +733,20 @@ function taxOf(shunyu, P, kojoI, kojoJ, jinteki, opt = {}) {
 
 /* ========================= 社会保険 ========================= */
 
+/** 国民健康保険の料率を、選択されたモードに応じて決める */
+function kokuhoParams(cfg) {
+  if (cfg.kokuhoMode === "manual") {
+    return { rate: cfg.pKokuhoRate, flat: cfg.pKokuhoFlat, cap: cfg.pKokuhoCap,
+             estimated: false, band: 0 };
+  }
+  const E = KOKUHO_ESTIMATE;
+  return {
+    rate: E.rate + (cfg.age40 ? E.careRate : 0),
+    flat: E.flat + (cfg.age40 ? E.careFlat : 0),
+    cap: E.cap, estimated: true, band: E.band,
+  };
+}
+
 function stdMonthly(monthly, forPension) {
   let v = STD_GRADES[0];
   for (let i = 0; i < STD_GRADES.length; i++) {
@@ -745,14 +795,14 @@ function socialInsurance(shunyu, cfg) {
   }
 
   // 国民健康保険＋国民年金
+  const k = kokuhoParams(cfg);
   const shotoku = kyuyoShotoku(shunyu, cfg.P);
-  const kokuhoBase = Math.max(0, shotoku - 430000);
-  const kokuho = Math.min(cfg.pKokuhoCap,
-    Math.floor(kokuhoBase * cfg.pKokuhoRate / 100) + cfg.pKokuhoFlat);
+  const kokuhoBase = Math.max(0, shotoku - 430000);   // 基礎控除43万円を控除した賦課基準額
+  const kokuho = Math.min(k.cap, Math.floor(kokuhoBase * k.rate / 100) + k.flat);
   const kokunen = cfg.isStudent ? 0 : cfg.pKokunen * 12;   // 学生納付特例で猶予
   const koyo = cfg.weekly >= 1 ? Math.floor(shunyu * cfg.pKoyo / 100) : 0;
   return { status:"kokuho", health:kokuho, pension:kokunen, koyo, total: kokuho + kokunen + koyo,
-           studentDeferred: cfg.isStudent };
+           studentDeferred: cfg.isStudent, kokuhoEstimated: k.estimated, kokuhoBand: k.band };
 }
 
 /* ========================= 扶養者側の計算 ========================= */
@@ -922,7 +972,7 @@ const $ = id => document.getElementById(id);
 const F = {
   year:$("year"), role:$("role"), income:$("income"), incomeRange:$("incomeRange"),
   isStudent:$("isStudent"), supporterIncome:$("supporterIncome"), age40:$("age40"),
-  weekly20:$("weekly20"), firmSize:$("firmSize"), regime:$("regime"),
+  weekly20:$("weekly20"), firmSize:$("firmSize"), regime:$("regime"), kokuhoMode:$("kokuhoMode"),
   kidsCount:$("kidsCount"), uniKids:$("uniKids"), uniType:$("uniType"),
   pHealth:$("pHealth"), pCare:$("pCare"), pKodomo:$("pKodomo"), pPension:$("pPension"),
   pKoyo:$("pKoyo"), pKokunen:$("pKokunen"), pKokuhoRate:$("pKokuhoRate"),
@@ -952,6 +1002,7 @@ function readConfig() {
     weekly: +F.weekly20.value,
     firmSize: +F.firmSize.value,
     regimeId: F.regime.value,
+    kokuhoMode: F.kokuhoMode.value,
     kidsCount: Math.max(0, num(F.kidsCount)),
     uniKids: Math.max(0, num(F.uniKids)),
     uniType: F.uniType.value,
@@ -982,6 +1033,13 @@ function render() {
   $("regimeNote").textContent = rg.wageReq > 0
     ? `賃金要件 月額${rg.wageReq.toLocaleString()}円以上・従業員${rg.firm}人以上`
     : `賃金要件は撤廃済み。従業員${rg.firm}人以上が対象`;
+
+  const manual = cfg.kokuhoMode === "manual";
+  $("kokuhoManual").hidden = !manual;
+  const kp = kokuhoParams(cfg);
+  $("kokuhoNote").textContent = manual
+    ? `所得割 ${kp.rate}％・均等割 ${kp.flat.toLocaleString()}円で計算します。`
+    : `所得割 ${kp.rate}％・均等割 ${kp.flat.toLocaleString()}円で計算します。自治体差により誤差 ±${Math.round(kp.band*100)}％程度。`;
 
   const r = simulate(cfg.income, cfg);
   renderSummary(r, cfg);
@@ -1053,6 +1111,11 @@ function renderSummary(r, cfg) {
   if (r.kinroOK) {
     push("good", "✓", "勤労学生控除が適用されています",
       `所得税27万円・住民税26万円が上乗せで控除されています。合計所得が${man(cfg.P.kinroLimit)}（給与収入 約${man(shunyuFor(cfg.P.kinroLimit, cfg.P))}）を超えると使えなくなります。`);
+  }
+  if (r.si.status === "kokuho" && r.si.kokuhoEstimated) {
+    const lo = r.si.health * (1 - r.si.kokuhoBand), hi = r.si.health * (1 + r.si.kokuhoBand);
+    push("warn", "!", "国民健康保険料は概算です",
+      `いまの条件では国民健康保険に加入する計算になり、保険料は <b>${yen(r.si.health)}</b> と試算されています。ただし国保の料率は自治体ごとに大きく異なり、実際には <b>${yen(lo)}〜${yen(hi)}</b> 程度の幅があります。<br>正確に知りたい場合は、上の「国民健康保険料の計算方法」で <b>「お住まいの自治体の料率を入力する」</b> を選び、市区町村のホームページに掲載されている料率を入力してください。`);
   }
   if (r.si.status === "kokuho" && r.si.studentDeferred) {
     push("warn", "!", "国民年金は学生納付特例を前提にしています",
@@ -1213,7 +1276,7 @@ function renderStack(r, cfg) {
     ["手取り", r.net, "額面から下の3項目を差し引いた金額"],
     ["社会保険料 合計", si.total,
       si.status === "shaho" ? `健康保険 ${yen(si.health)}／厚生年金 ${yen(si.pension)}／雇用保険 ${yen(si.koyo)}`
-      : si.status === "kokuho" ? `国民健康保険 ${yen(si.health)}／国民年金 ${yen(si.pension)}${si.studentDeferred?"（学生納付特例）":""}／雇用保険 ${yen(si.koyo)}`
+      : si.status === "kokuho" ? `国民健康保険 ${yen(si.health)}${si.kokuhoEstimated?"（概算・自治体差±"+Math.round(si.kokuhoBand*100)+"%）":"（入力した料率で計算）"}／国民年金 ${yen(si.pension)}${si.studentDeferred?"（学生納付特例）":""}／雇用保険 ${yen(si.koyo)}`
       : `扶養内のため健康保険・年金の本人負担なし／雇用保険 ${yen(si.koyo)}`],
     ["所得税", r.tax, `課税所得 ${yen(r.taxDetail.kazeiI)}（基礎控除 ${yen(r.taxDetail.kisoI)}）・復興特別所得税込み`],
     ["住民税", r.jumin, r.taxDetail.hikazei ? "非課税限度額以下のため非課税"
