@@ -1,0 +1,1357 @@
+<title>年収の壁シミュレーター</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="令和7〜9年分の税制・社会保険に対応した年収の壁シミュレーター。配偶者・学生・19〜22歳の子など立場別に、手取りと家族の税負担への影響を試算します。">
+
+<style>
+/* ============================================================
+   トークン（ライト＝既定。ダークは2スコープで定義）
+   パレットは dataviz リファレンスパレットを使用し、
+   validate_palette.js で light / dark 双方の検証済み。
+   ============================================================ */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --surface-2: #f2f1ed;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --series-1: #2a78d6;  /* 本人の手取り */
+  --series-2: #eb6834;  /* 世帯全体の手取り増加額 */
+  --series-3: #1baf7a;  /* 内訳：所得税 */
+  --series-4: #eda100;  /* 内訳：住民税 */
+  --st-good: #0ca30c;
+  --st-warning: #fab219;
+  --st-critical: #d03b3b;
+  --good-ink: #006300;
+  --shadow: 0 1px 2px rgba(11,11,11,.05), 0 8px 24px rgba(11,11,11,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --surface-2: #232322;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --good-ink: #0ca30c;
+    --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page: #0d0d0d;
+  --surface-2: #232322;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --good-ink: #0ca30c;
+  --shadow: none;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* .badge の display:inline-flex に負けないように */
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 72px; }
+
+/* ---------- ヘッダ ---------- */
+header { margin-bottom: 20px; }
+h1 { font-size: 26px; line-height: 1.35; margin: 0 0 8px; letter-spacing: -.01em; }
+.sub { color: var(--text-secondary); margin: 0 0 12px; font-size: 14px; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.badge.warn { color: var(--text-primary); }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+/* ---------- カード ---------- */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.card > h2 {
+  font-size: 15px; margin: 0 0 4px; letter-spacing: .01em;
+}
+.card > .hint { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
+
+/* ---------- フォーム ---------- */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px 18px; }
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+.field .note { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+select, input[type="number"], input[type="text"] {
+  font: inherit; font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--axis);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  width: 100%;
+  min-width: 0;
+}
+select:focus-visible, input:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--series-1); outline-offset: 2px;
+}
+input[type="range"] { width: 100%; accent-color: var(--series-1); }
+.checkline { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.checkline input { accent-color: var(--series-1); width: 16px; height: 16px; }
+.income-row { display: flex; align-items: baseline; gap: 10px; }
+.income-row input[type="number"] { width: 130px; }
+.income-row .unit { font-size: 13px; color: var(--text-muted); }
+
+details.adv { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+details.adv > summary {
+  cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-secondary);
+  list-style: none; display: flex; align-items: center; gap: 6px;
+}
+details.adv > summary::-webkit-details-marker { display: none; }
+details.adv > summary::before { content: "▸"; font-size: 11px; }
+details.adv[open] > summary::before { content: "▾"; }
+details.adv .grid { margin-top: 14px; }
+
+/* ---------- 結果 ---------- */
+.hero-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px 24px; }
+.tile { min-width: 0; }
+.tile .k { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+.tile .v {
+  font-size: clamp(19px, 4.6vw, 26px); font-weight: 650;
+  letter-spacing: -.02em; line-height: 1.3; white-space: nowrap;
+}
+.tile .v.hero { font-size: clamp(25px, 6.1vw, 38px); line-height: 1.2; }
+.tile .d { font-size: 12px; color: var(--text-muted); }
+.tile .d.bad { color: var(--st-critical); font-weight: 600; }
+.tile .d.good { color: var(--good-ink); font-weight: 600; }
+
+.callout {
+  border-left: 3px solid var(--axis);
+  padding: 10px 0 10px 14px;
+  margin: 16px 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.callout.crit { border-left-color: var(--st-critical); }
+.callout.warn { border-left-color: var(--st-warning); }
+.callout.good { border-left-color: var(--st-good); }
+.callout b { color: var(--text-primary); }
+.callout .ttl { display: flex; align-items: center; gap: 7px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+
+/* ---------- グラフ ---------- */
+.chart-head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--text-secondary); }
+.legend .item { display: flex; align-items: center; gap: 6px; }
+.legend .key { width: 16px; height: 2px; border-radius: 1px; flex: none; }
+.legend .key.sq { width: 11px; height: 11px; border-radius: 3px; }
+.chart-box { position: relative; width: 100%; overflow-x: auto; }
+svg { display: block; width: 100%; height: auto; }
+/* 幅を詰められても軸ラベルが潰れないよう、下限を割ったら横スクロールさせる */
+#chart { min-width: 620px; }
+#stack { min-width: 480px; }
+.stack-scroll { overflow-x: auto; }
+.tip {
+  position: absolute; pointer-events: none; z-index: 5;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 11px; font-size: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.14); min-width: 168px;
+  color: var(--text-primary); opacity: 0; transition: opacity .1s;
+}
+.tip .th { font-weight: 700; margin-bottom: 5px; }
+.tip .tr { display: flex; justify-content: space-between; gap: 14px; }
+.tip .tr span:last-child { font-variant-numeric: tabular-nums; }
+.tip .tk { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+
+/* ---------- テーブル ---------- */
+.tbl-scroll { overflow-x: auto; margin: 0 -18px; padding: 0 18px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 560px; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tbody tr.hit { background: var(--surface-2); }
+tbody tr.hit td:first-child { font-weight: 700; }
+.pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary); white-space: nowrap; }
+
+/* ---------- フッタ ---------- */
+footer { margin-top: 32px; font-size: 12px; color: var(--text-muted); line-height: 1.8; }
+footer h3 { font-size: 12px; color: var(--text-secondary); margin: 18px 0 4px; }
+footer ul { margin: 0; padding-left: 18px; }
+footer a { color: inherit; }
+.disclaimer {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; font-size: 12.5px;
+  color: var(--text-secondary); line-height: 1.75;
+}
+.disclaimer b { color: var(--text-primary); }
+
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+button.act {
+  font: inherit; font-size: 13px; font-weight: 600;
+  padding: 7px 14px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--axis); background: var(--surface-1); color: var(--text-primary);
+}
+button.act:hover { background: var(--surface-2); }
+.copied { font-size: 12px; color: var(--good-ink); align-self: center; }
+
+@media (max-width: 560px) {
+  h1 { font-size: 21px; }
+  .card { padding: 15px; }
+  .tbl-scroll { margin: 0 -15px; padding: 0 15px; }
+  /* 狭い画面ではヒーロー数値を1行占有させる（隣のタイルへのはみ出しを防ぐ） */
+  .hero-row { grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+  .hero-row .tile:first-child { grid-column: 1 / -1; }
+  .scroll-hint { display: block; }
+}
+.scroll-hint { display: none; font-size: 11px; color: var(--text-muted); margin: 4px 0 0; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <h1>年収の壁シミュレーター</h1>
+  <p class="sub">立場・年分・働き方を変えると、手取りと <b>家族の税負担</b> がどう動くかを試算します。</p>
+  <div class="badges">
+    <span class="badge" id="basisBadge">制度基準日：2026年8月16日</span>
+    <span class="badge" id="staleBadge" hidden></span>
+    <span class="badge">概算・個別判断は要相談</span>
+  </div>
+</header>
+
+<!-- ===================== 入力 ===================== -->
+<section class="card">
+  <h2>1. あなたの状況</h2>
+  <p class="hint">まずここを埋めてください。以降の結果はすべてこの条件で再計算されます。</p>
+  <div class="grid">
+    <div class="field">
+      <label for="year">年分（収入を得る年）</label>
+      <select id="year">
+        <option value="2025">令和7年分（2025年）</option>
+        <option value="2026" selected>令和8年分（2026年）</option>
+        <option value="2027">令和9年分（2027年）</option>
+        <option value="2028">令和10年分（2028年）※特例終了後・予定</option>
+      </select>
+      <span class="note" id="yearNote"></span>
+    </div>
+
+    <div class="field">
+      <label for="role">あなたの立場</label>
+      <select id="role">
+        <option value="spouse">配偶者（夫・妻の扶養に入っている／入りたい）</option>
+        <option value="child1922" selected>子など親族：19歳以上23歳未満</option>
+        <option value="child1618">子など親族：16歳以上19歳未満</option>
+        <option value="child23">子など親族：23歳以上70歳未満</option>
+        <option value="single">扶養に入っていない（単身など）</option>
+      </select>
+      <span class="note" id="roleNote"></span>
+    </div>
+
+    <div class="field">
+      <label for="income">あなたの年収（給与・額面）</label>
+      <div class="income-row">
+        <input type="number" id="income" min="0" max="4000000" step="10000" value="1300000">
+        <span class="unit">円</span>
+      </div>
+      <input type="range" id="incomeRange" min="0" max="3000000" step="10000" value="1300000">
+    </div>
+
+    <div class="field">
+      <label for="isStudent">学生かどうか</label>
+      <div class="checkline"><input type="checkbox" id="isStudent"><label for="isStudent">学生である（勤労学生控除・社会保険の適用除外）</label></div>
+      <span class="note">学生は週20時間以上でも厚生年金・健康保険の加入対象から除外されます（夜間・通信制等を除く）。</span>
+    </div>
+
+    <div class="field">
+      <label for="supporterIncome">扶養者（親・配偶者）の年収</label>
+      <div class="income-row">
+        <input type="number" id="supporterIncome" min="0" max="30000000" step="100000" value="6000000">
+        <span class="unit">円</span>
+      </div>
+      <span class="note">この人の税額があなたの年収でどう変わるかを計算します。</span>
+    </div>
+
+    <div class="field">
+      <label for="age40">介護保険（第2号被保険者）</label>
+      <div class="checkline"><input type="checkbox" id="age40"><label for="age40">あなたは40歳以上65歳未満</label></div>
+      <span class="note">該当すると健康保険料に介護保険料率が上乗せされます。</span>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:16px">
+    <div class="field">
+      <label for="weekly20">週の所定労働時間</label>
+      <select id="weekly20">
+        <option value="1" selected>20時間以上（＋2か月超の雇用見込み）</option>
+        <option value="0">20時間未満</option>
+        <option value="2">30時間以上（フルタイムの4分の3以上）</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="firmSize">勤務先の従業員数</label>
+      <select id="firmSize">
+        <option value="51" selected>51人以上</option>
+        <option value="36">36〜50人</option>
+        <option value="21">21〜35人</option>
+        <option value="11">11〜20人</option>
+        <option value="1">10人以下</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="regime">社会保険の判定時点</label>
+      <select id="regime"></select>
+      <span class="note" id="regimeNote"></span>
+    </div>
+  </div>
+
+  <details class="adv">
+    <summary>多子世帯の学費支援（大学等）</summary>
+    <div class="grid">
+      <div class="field">
+        <label for="kidsCount">生計維持者が扶養している子の人数（あなたを含む）</label>
+        <input type="number" id="kidsCount" min="0" max="10" step="1" value="3">
+        <span class="note">3人以上で「多子世帯」＝所得制限なしで授業料・入学金が上限まで減免されます。</span>
+      </div>
+      <div class="field">
+        <label for="uniKids">うち大学等に在学中の人数</label>
+        <input type="number" id="uniKids" min="0" max="10" step="1" value="2">
+      </div>
+      <div class="field">
+        <label for="uniType">在学先（減免上限の目安）</label>
+        <select id="uniType">
+          <option value="private">私立大学（授業料70万円／年）</option>
+          <option value="national">国立大学（授業料535,800円／年）</option>
+          <option value="junior">私立短大（授業料62万円／年）</option>
+        </select>
+      </div>
+    </div>
+  </details>
+
+  <details class="adv">
+    <summary>詳細パラメータ（保険料率・国保・住民税）</summary>
+    <div class="grid">
+      <div class="field"><label for="pHealth">健康保険料率（％・労使合計）</label><input type="number" id="pHealth" step="0.01" value="9.85"><span class="note">協会けんぽ東京都・令和8年度</span></div>
+      <div class="field"><label for="pCare">介護保険料率（％・労使合計）</label><input type="number" id="pCare" step="0.01" value="1.62"><span class="note">全国一律・令和8年度</span></div>
+      <div class="field"><label for="pKodomo">子ども・子育て支援金率（％）</label><input type="number" id="pKodomo" step="0.01" value="0.23"><span class="note">令和8年度・健康保険料に上乗せ</span></div>
+      <div class="field"><label for="pPension">厚生年金保険料率（％・労使合計）</label><input type="number" id="pPension" step="0.01" value="18.30"></div>
+      <div class="field"><label for="pKoyo">雇用保険料率（％・労働者負担）</label><input type="number" id="pKoyo" step="0.01" value="0.50"><span class="note">一般の事業・令和8年度</span></div>
+      <div class="field"><label for="pKokunen">国民年金保険料（円／月）</label><input type="number" id="pKokunen" step="10" value="17920"><span class="note">令和8年度</span></div>
+      <div class="field"><label for="pKokuhoRate">国保 所得割率（％・合計）</label><input type="number" id="pKokuhoRate" step="0.01" value="12.50"><span class="note badge warn">要確認：自治体で大きく異なります</span></div>
+      <div class="field"><label for="pKokuhoFlat">国保 均等割（円／年・1人）</label><input type="number" id="pKokuhoFlat" step="100" value="66300"><span class="note badge warn">要確認：自治体で大きく異なります</span></div>
+      <div class="field"><label for="pKokuhoCap">国保 賦課限度額（円／年）</label><input type="number" id="pKokuhoCap" step="10000" value="1130000"><span class="note">令和8年度</span></div>
+      <div class="field"><label for="pJuminFlat">住民税 均等割（円／年）</label><input type="number" id="pJuminFlat" step="100" value="5000"><span class="note">森林環境税1,000円を含む</span></div>
+      <div class="field"><label for="pHikazei">住民税 非課税限度額（合計所得・円）</label><input type="number" id="pHikazei" step="10000" value="450000"><span class="note">1級地・扶養親族なしの場合</span></div>
+    </div>
+  </details>
+</section>
+
+<!-- ===================== 結果サマリ ===================== -->
+<section class="card">
+  <h2>2. この年収でのあなたの手取り</h2>
+  <p class="hint" id="statusLine"></p>
+  <div class="hero-row">
+    <div class="tile"><div class="k">あなたの手取り（年間）</div><div class="v hero" id="tNet">—</div><div class="d" id="tNetSub"></div></div>
+    <div class="tile"><div class="k">天引き合計</div><div class="v" id="tDeduct">—</div><div class="d" id="tDeductSub"></div></div>
+    <div class="tile"><div class="k">扶養者の税負担の増加</div><div class="v" id="tParent">—</div><div class="d" id="tParentSub"></div></div>
+    <div class="tile"><div class="k">世帯全体の手取り増加額</div><div class="v" id="tHouse">—</div><div class="d" id="tHouseSub"></div></div>
+  </div>
+  <div id="callouts"></div>
+</section>
+
+<!-- ===================== グラフ ===================== -->
+<section class="card">
+  <div class="chart-head">
+    <div>
+      <h2>3. 年収を変えたときの手取りカーブ</h2>
+      <p class="hint" style="margin:0">縦の細い線が「壁」。青と橙の差が、あなたの収入によって扶養者側に生じる増税分です。扶養者の税が増えていない区間では、2本の線は完全に重なります。</p>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="key" style="background:var(--series-1)"></span>あなたの手取り</div>
+      <div class="item"><span class="key" style="background:var(--series-2)"></span>世帯全体の手取り増加額</div>
+      <div class="item"><span class="key" style="background:var(--text-muted)"></span>額面年収（参考）</div>
+    </div>
+  </div>
+  <div class="chart-box" id="chartBox">
+    <svg id="chart" viewBox="0 0 900 400" role="img" aria-labelledby="chartTitle"><title id="chartTitle">年収に対する手取りと世帯手取り増加額の推移</title></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+  <p class="scroll-hint">← グラフは横にスクロールできます</p>
+</section>
+
+<!-- ===================== 内訳 ===================== -->
+<section class="card">
+  <div class="chart-head">
+    <div>
+      <h2>4. 額面年収の内訳</h2>
+      <p class="hint" style="margin:0">額面がどこへ消えるか。数値は下の表にも掲載しています。</p>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="key sq" style="background:var(--series-1)"></span>手取り</div>
+      <div class="item"><span class="key sq" style="background:var(--series-2)"></span>社会保険料</div>
+      <div class="item"><span class="key sq" style="background:var(--series-3)"></span>所得税</div>
+      <div class="item"><span class="key sq" style="background:var(--series-4)"></span>住民税</div>
+    </div>
+  </div>
+  <div class="stack-scroll"><svg id="stack" viewBox="0 0 900 92" role="img" aria-label="額面年収の内訳"></svg></div>
+  <div class="tbl-scroll" style="margin-top:6px">
+    <table id="breakdownTbl">
+      <thead><tr><th>項目</th><th class="num">金額（年間）</th><th class="num">額面比</th><th>内容</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===================== 壁一覧 ===================== -->
+<section class="card">
+  <h2>5. あなたに関係する「壁」の一覧</h2>
+  <p class="hint">選んだ年分・立場で実際に効く壁だけを並べています。網掛けの行が、いまの年収が到達している段階です。</p>
+  <div class="tbl-scroll">
+    <table id="wallTbl">
+      <thead><tr><th class="num">年収</th><th>壁の名前</th><th>この金額を境に何が起きるか</th><th class="num">その年収ちょうどの手取り</th><th class="num">世帯の増加額</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===================== 多子世帯 ===================== -->
+<section class="card" id="tashiCard">
+  <h2>6. 多子世帯の学費支援への影響</h2>
+  <p class="hint">扶養する子が3人以上いる世帯は、所得制限なしで大学等の授業料・入学金が上限まで減免されます。あなたが扶養から外れると、その人数カウントが崩れます。</p>
+  <div id="tashiBody"></div>
+</section>
+
+<!-- ===================== 共有 ===================== -->
+<section class="card">
+  <h2>7. この条件を共有する</h2>
+  <p class="hint">いまの入力内容をURLに埋め込みます。SNSやメールでそのまま渡せます。</p>
+  <div class="btnrow">
+    <button class="act" id="btnShare">条件付きURLをコピー</button>
+    <button class="act" id="btnReset">初期値に戻す</button>
+    <span class="copied" id="copied" hidden>コピーしました</span>
+  </div>
+</section>
+
+<footer>
+  <div class="disclaimer">
+    <b>免責</b>：本ツールは制度の理解を助けるための<b>概算</b>です。給与収入のみの給与所得者を前提とし、賞与・複数勤務先・年の途中の就退職・個人事業所得・年金収入・生命保険料控除・医療費控除・住宅ローン控除等は考慮していません。国民健康保険料は自治体により大きく異なり、住民税の非課税限度額も地域区分で変わります。実際の税額・保険料額および個別のご判断については、必ず税理士・社会保険労務士・お住まいの市区町村にご確認ください。本ツールの利用により生じた不利益について作成者は責任を負いません。
+  </div>
+
+  <h3>制度の前提</h3>
+  <ul>
+    <li>令和7年度税制改正（令和7年分〜）および令和8年度税制改正（令和8年分〜）を反映しています。</li>
+    <li>基礎控除の上乗せ特例と給与所得控除の5万円上乗せは<b>令和8年分・令和9年分限り</b>です。令和10年分は特例終了後の予定値であり、今後の改正で変わり得ます。</li>
+    <li>住民税は前年の所得に対して翌年度に課税されます（例：令和8年分の所得 → 令和9年度の住民税）。本ツールは「その年の収入に対して生じる税額」として表示しています。</li>
+    <li>社会保険の適用拡大は、2026年10月に賃金要件（月額8.8万円）が撤廃され、企業規模要件が2027年10月以降に段階的に撤廃されます。</li>
+  </ul>
+
+  <h3>主な出典</h3>
+  <ul>
+    <li>国税庁「令和7年度／令和8年度税制改正による所得税の基礎控除の見直し等について」</li>
+    <li>財務省「令和8年度税制改正の大綱」（令和7年12月26日閣議決定）</li>
+    <li>全国健康保険協会「令和8年度保険料額表（東京都）」健康保険 9.85%／介護 1.62%／子ども・子育て支援金 0.23%</li>
+    <li>日本年金機構「令和8年度 国民年金保険料」月額17,920円</li>
+    <li>厚生労働省「年金制度改正法（2025年6月成立）」短時間労働者への適用拡大</li>
+    <li>厚生労働省「雇用保険料率（令和8年度）」一般の事業・労働者負担 0.5%</li>
+    <li>文部科学省・日本学生支援機構「高等教育の修学支援新制度（多子世帯の授業料等無償化）」</li>
+    <li>東京都保健医療局「令和8年度 国民健康保険事業費納付金及び標準保険料率」</li>
+  </ul>
+
+  <h3>更新予定</h3>
+  <ul>
+    <li>毎年1月（税制改正大綱の反映）および4月（保険料率改定の反映）に見直します。</li>
+  </ul>
+</footer>
+
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   年収の壁シミュレーター — 計算エンジン
+   制度基準日: 2026-08-16
+   すべての制度パラメータはこのブロックに集約してあります。
+   法改正時はここだけを差し替えれば全画面に反映されます。
+   ========================================================================== */
+
+const BASIS_DATE = "2026-08-16";
+const REVIEW_DUE = "2027-01-31";   // これを過ぎたら画面上部に注意バーを出す
+
+/* --------------------------------------------------------------------------
+   年分別パラメータ
+   kyuyoKojoMin : 給与所得控除の最低保障額
+   kisoIncome   : 所得税の基礎控除（合計所得の上限, 控除額）
+   kisoJumin    : 住民税の基礎控除
+   fuyoLimit    : 扶養親族・同一生計配偶者の合計所得要件
+   kinroLimit   : 勤労学生控除の合計所得要件
+   出典: 国税庁 令和7年度／令和8年度税制改正 資料、財務省 令和8年度税制改正の大綱
+-------------------------------------------------------------------------- */
+const YEARS = {
+  2025: {
+    label: "令和7年分（2025年）", juminLabel: "令和8年度",
+    kyuyoKojoMin: 650000,
+    kisoIncome: [[1320000,950000],[3360000,880000],[4890000,680000],[6550000,630000],
+                 [23500000,580000],[24000000,480000],[24500000,320000],[25000000,160000],[Infinity,0]],
+    kisoJumin: [[24000000,430000],[24500000,290000],[25000000,150000],[Infinity,0]],
+    fuyoLimit: 580000,
+    kinroLimit: 850000,
+    note: "給与所得控除65万円＋基礎控除95万円 ＝ 所得税の非課税ライン160万円。",
+    provisional: false,
+  },
+  2026: {
+    label: "令和8年分（2026年）", juminLabel: "令和9年度",
+    kyuyoKojoMin: 740000,   // 本則69万＋令和8・9年分限りの特例5万
+    kisoIncome: [[4890000,1040000],[6550000,670000],[23500000,620000],
+                 [24000000,480000],[24500000,320000],[25000000,160000],[Infinity,0]],
+    kisoJumin: [[24000000,430000],[24500000,290000],[25000000,150000],[Infinity,0]],
+    fuyoLimit: 620000,
+    kinroLimit: 890000,
+    note: "給与所得控除74万円＋基礎控除104万円 ＝ 所得税の非課税ライン178万円。",
+    provisional: false,
+  },
+  2027: {
+    label: "令和9年分（2027年）", juminLabel: "令和10年度",
+    kyuyoKojoMin: 740000,
+    kisoIncome: [[4890000,1040000],[6550000,670000],[23500000,620000],
+                 [24000000,480000],[24500000,320000],[25000000,160000],[Infinity,0]],
+    kisoJumin: [[24000000,430000],[24500000,290000],[25000000,150000],[Infinity,0]],
+    fuyoLimit: 620000,
+    kinroLimit: 890000,
+    note: "令和8年分と同じ。特例上乗せが適用される最後の年です。",
+    provisional: false,
+  },
+  2028: {
+    label: "令和10年分（2028年）", juminLabel: "令和11年度",
+    kyuyoKojoMin: 690000,   // 本則のみ（特例終了）
+    kisoIncome: [[1320000,990000],[23500000,620000],
+                 [24000000,480000],[24500000,320000],[25000000,160000],[Infinity,0]],
+    kisoJumin: [[24000000,430000],[24500000,290000],[25000000,150000],[Infinity,0]],
+    fuyoLimit: 620000,
+    kinroLimit: 890000,
+    note: "特例終了後の予定値。非課税ラインは168万円に下がり、合計所得132万円の前後で基礎控除が99万円→62万円に落ちる段差が生じます。",
+    provisional: true,
+  },
+};
+
+/* 配偶者（特別）控除 — 配偶者の合計所得の上限ごとに [本人所得900万以下, 950万以下, 1000万以下] */
+const HAIGUSHA_TOKUBETSU_I = [[950000,380000,260000,130000],[1000000,360000,240000,120000],
+  [1050000,310000,210000,110000],[1100000,260000,180000,90000],[1150000,210000,140000,70000],
+  [1200000,160000,110000,60000],[1250000,110000,80000,40000],[1300000,60000,40000,20000],
+  [1330000,30000,20000,10000]];
+const HAIGUSHA_TOKUBETSU_J = [[1000000,330000,220000,110000],
+  [1050000,310000,210000,110000],[1100000,260000,180000,90000],[1150000,210000,140000,70000],
+  [1200000,160000,110000,60000],[1250000,110000,80000,40000],[1300000,60000,40000,20000],
+  [1330000,30000,20000,10000]];
+const HAIGUSHA_KOJO_I = [380000,260000,130000];   // 配偶者控除（所得税）
+const HAIGUSHA_KOJO_J = [330000,220000,110000];   // 配偶者控除（住民税）
+
+/* 特定親族特別控除（19歳以上23歳未満）— [合計所得の上限, 所得税, 住民税] */
+const TOKUTEI_SHINZOKU = [[850000,630000,450000],[900000,610000,450000],[950000,510000,450000],
+  [1000000,410000,410000],[1050000,310000,310000],[1100000,210000,210000],
+  [1150000,110000,110000],[1200000,60000,60000],[1230000,30000,30000]];
+
+/* 扶養控除 [所得税, 住民税, 人的控除差(調整控除用)] */
+const FUYO_KOJO = {
+  child1618: [380000, 330000, 50000],
+  child1922: [630000, 450000, 180000],   // 特定扶養親族
+  child23:   [380000, 330000, 50000],
+};
+
+const KINRO_GAKUSEI = [270000, 260000, 10000];  // 勤労学生控除 [所得税, 住民税, 人的控除差]
+
+/* 社会保険の適用拡大タイムライン（年金制度改正法・2025年6月成立） */
+const REGIMES = [
+  { id:"pre2610",  label:"2026年9月まで",           wageReq:88000, firm:51 },
+  { id:"post2610", label:"2026年10月〜2027年9月",    wageReq:0,     firm:51 },
+  { id:"post2710", label:"2027年10月〜2029年9月",    wageReq:0,     firm:36 },
+  { id:"post2910", label:"2029年10月〜2032年9月",    wageReq:0,     firm:21 },
+  { id:"post3210", label:"2032年10月〜2035年9月",    wageReq:0,     firm:11 },
+  { id:"post3510", label:"2035年10月以降",           wageReq:0,     firm:1  },
+];
+const REGIME_BY_YEAR = { 2025:"pre2610", 2026:"post2610", 2027:"post2710", 2028:"post2710" };
+
+const FUYO_NINTEI_LIMIT = 1300000;   // 健康保険の被扶養者認定基準（130万円）
+
+/* 健康保険の標準報酬月額（第1〜50級）。厚生年金は88,000〜650,000の範囲。 */
+const STD_GRADES = [58000,68000,78000,88000,98000,104000,110000,118000,126000,134000,
+  142000,150000,160000,170000,180000,190000,200000,220000,240000,260000,280000,300000,
+  320000,340000,360000,380000,410000,440000,470000,500000,530000,560000,590000,620000,
+  650000,680000,710000,750000,790000,830000,880000,930000,980000,1030000,1090000,
+  1150000,1210000,1270000,1330000,1390000];
+const PENSION_MIN = 88000, PENSION_MAX = 650000;
+
+/* 多子世帯の授業料減免上限（高等教育の修学支援新制度） */
+const TUITION_CAP = {
+  private:  { label:"私立大学", tuition:700000, entrance:260000 },
+  national: { label:"国立大学", tuition:535800, entrance:282000 },
+  junior:   { label:"私立短大", tuition:620000, entrance:250000 },
+};
+
+/* ========================= 基本計算 ========================= */
+
+const yen = n => Math.round(n).toLocaleString("ja-JP") + "円";
+const man = n => (n/10000).toLocaleString("ja-JP", {maximumFractionDigits:1}) + "万円";
+
+/** 給与所得控除後の給与所得金額 */
+function kyuyoShotoku(shunyu, P) {
+  if (shunyu <= 0) return 0;
+  let k;
+  if (shunyu <= 3600000)      k = shunyu * 0.30 + 80000;
+  else if (shunyu <= 6600000) k = shunyu * 0.20 + 440000;
+  else if (shunyu <= 8500000) k = shunyu * 0.10 + 1100000;
+  else                        k = 1950000;
+  k = Math.max(k, P.kyuyoKojoMin);
+  k = Math.min(k, shunyu);
+  return Math.floor(shunyu - k);
+}
+
+function lookup(table, v, col = 1) {
+  for (const row of table) if (v <= row[0]) return row[col];
+  return 0;
+}
+
+/**
+ * 合計所得の基準額を給与収入に換算する。
+ * 「その金額までなら基準を満たす」最大の給与収入（1,000円単位）を返す。
+ * 例：令和8年分で合計所得104万円 → 1,780,000円（178万円の壁）
+ */
+function incomeForShotoku(shotoku, P) {
+  let last = 0;
+  for (let s = 0; s <= 4000000; s += 1000) {
+    if (kyuyoShotoku(s, P) <= shotoku) last = s; else break;
+  }
+  return last;
+}
+
+/** 所得税額（復興特別所得税2.1%込み） */
+function incomeTax(kazei) {
+  const k = Math.floor(Math.max(0, kazei) / 1000) * 1000;
+  if (k <= 0) return 0;
+  const t = [[1950000,0.05,0],[3300000,0.10,97500],[6950000,0.20,427500],
+             [9000000,0.23,636000],[18000000,0.33,1536000],[40000000,0.40,2796000],
+             [Infinity,0.45,4796000]];
+  for (const [ub,r,d] of t) if (k <= ub) return Math.floor(Math.floor(k*r - d) * 1.021);
+  return 0;
+}
+
+/** 住民税の調整控除 */
+function chouseiKojo(kazeiJumin, jinteki) {
+  if (kazeiJumin <= 0 || jinteki <= 0) return 0;
+  if (kazeiJumin <= 2000000) return Math.floor(Math.min(jinteki, kazeiJumin) * 0.05);
+  const base = jinteki - (kazeiJumin - 2000000);
+  return Math.floor(Math.max(base, 50000) * 0.05);
+}
+
+/**
+ * 一人分の税額計算。
+ * kojoI / kojoJ : 基礎控除以外の所得控除（社会保険料控除を含む）
+ * jinteki       : 調整控除の計算に使う人的控除の差額合計（基礎控除分5万円を除く）
+ */
+function taxOf(shunyu, P, kojoI, kojoJ, jinteki, opt = {}) {
+  const shotoku = kyuyoShotoku(shunyu, P);
+  const kisoI = lookup(P.kisoIncome, shotoku);
+  const kisoJ = lookup(P.kisoJumin, shotoku);
+
+  const kazeiI = Math.max(0, Math.floor((shotoku - kisoI - kojoI) / 1000) * 1000);
+  const tax = incomeTax(kazeiI);
+
+  const hikazeiLimit = opt.hikazeiLimit ?? 450000;
+  const hikazei = shotoku <= hikazeiLimit;
+  const kazeiJ = Math.max(0, Math.floor((shotoku - kisoJ - kojoJ) / 1000) * 1000);
+  let jumin = 0;
+  if (!hikazei) {
+    const shotokuwari = Math.max(0, Math.floor(kazeiJ * 0.10) - chouseiKojo(kazeiJ, jinteki + 50000));
+    jumin = Math.floor(shotokuwari / 100) * 100 + (opt.juminFlat ?? 5000);
+  }
+  return { shotoku, kisoI, kisoJ, kazeiI, kazeiJ, tax, jumin, hikazei };
+}
+
+/* ========================= 社会保険 ========================= */
+
+function stdMonthly(monthly, forPension) {
+  let v = STD_GRADES[0];
+  for (let i = 0; i < STD_GRADES.length; i++) {
+    const upper = (i === STD_GRADES.length - 1) ? Infinity : (STD_GRADES[i] + STD_GRADES[i+1]) / 2;
+    if (monthly < upper) { v = STD_GRADES[i]; break; }
+    v = STD_GRADES[STD_GRADES.length - 1];
+  }
+  if (forPension) v = Math.min(Math.max(v, PENSION_MIN), PENSION_MAX);
+  return v;
+}
+
+/**
+ * 社会保険の状態と本人負担額を決める。
+ * 戻り値 status: "shaho"（勤務先の社保）/ "fuyou"（扶養内・負担なし）/ "kokuho"（国保＋国民年金）
+ */
+function socialInsurance(shunyu, cfg) {
+  const monthly = shunyu / 12;
+  const regime = REGIMES.find(r => r.id === cfg.regimeId) || REGIMES[1];
+
+  // 勤務先の社会保険に入るか
+  let enrolled = false;
+  if (!cfg.isStudent || cfg.weekly === 2) {          // 学生でも週30時間以上なら加入
+    if (cfg.weekly === 2) {
+      enrolled = true;                                // フルタイムの4分の3以上は規模を問わず加入
+    } else if (cfg.weekly === 1) {
+      enrolled = cfg.firmSize >= regime.firm && monthly >= regime.wageReq;
+    }
+  }
+
+  if (enrolled) {
+    const sHealth = stdMonthly(monthly, false);
+    const sPension = stdMonthly(monthly, true);
+    const rHealth = (cfg.pHealth + (cfg.age40 ? cfg.pCare : 0) + cfg.pKodomo) / 100 / 2;
+    const rPension = cfg.pPension / 100 / 2;
+    const health = Math.round(sHealth * rHealth) * 12;
+    const pension = Math.round(sPension * rPension) * 12;
+    const koyo = Math.floor(shunyu * cfg.pKoyo / 100);
+    return { status:"shaho", health, pension, koyo, total: health + pension + koyo,
+             stdHealth: sHealth, stdPension: sPension };
+  }
+
+  // 扶養に入れるか（130万円未満、かつ扶養者がいる立場か）
+  if (cfg.hasSupporter && shunyu < FUYO_NINTEI_LIMIT) {
+    const koyo = cfg.weekly >= 1 ? Math.floor(shunyu * cfg.pKoyo / 100) : 0;
+    return { status:"fuyou", health:0, pension:0, koyo, total: koyo };
+  }
+
+  // 国民健康保険＋国民年金
+  const shotoku = kyuyoShotoku(shunyu, cfg.P);
+  const kokuhoBase = Math.max(0, shotoku - 430000);
+  const kokuho = Math.min(cfg.pKokuhoCap,
+    Math.floor(kokuhoBase * cfg.pKokuhoRate / 100) + cfg.pKokuhoFlat);
+  const kokunen = cfg.isStudent ? 0 : cfg.pKokunen * 12;   // 学生納付特例で猶予
+  const koyo = cfg.weekly >= 1 ? Math.floor(shunyu * cfg.pKoyo / 100) : 0;
+  return { status:"kokuho", health:kokuho, pension:kokunen, koyo, total: kokuho + kokunen + koyo,
+           studentDeferred: cfg.isStudent };
+}
+
+/* ========================= 扶養者側の計算 ========================= */
+
+/** 本人の合計所得に応じて、扶養者が受けられる控除額 [所得税, 住民税, 人的控除差] */
+function supporterDeduction(role, honninShotoku, P, supporterShotoku) {
+  const tier = supporterShotoku <= 9000000 ? 0 : supporterShotoku <= 9500000 ? 1
+             : supporterShotoku <= 10000000 ? 2 : -1;
+
+  if (role === "spouse") {
+    if (tier < 0) return [0,0,0];
+    if (honninShotoku <= P.fuyoLimit) return [HAIGUSHA_KOJO_I[tier], HAIGUSHA_KOJO_J[tier], 50000];
+    const i = lookup(HAIGUSHA_TOKUBETSU_I, honninShotoku, tier+1);
+    const j = lookup(HAIGUSHA_TOKUBETSU_J, honninShotoku, tier+1);
+    return [i, j, i > 0 ? Math.min(50000, i - j) : 0];
+  }
+
+  if (role === "child1922") {
+    if (honninShotoku <= P.fuyoLimit) return FUYO_KOJO.child1922;
+    const i = lookup(TOKUTEI_SHINZOKU, honninShotoku, 1);
+    const j = lookup(TOKUTEI_SHINZOKU, honninShotoku, 2);
+    return [i, j, Math.max(0, i - j)];
+  }
+
+  if (role === "child1618" || role === "child23") {
+    if (honninShotoku <= P.fuyoLimit) return FUYO_KOJO[role];
+    return [0,0,0];   // 扶養控除は所得要件を1円でも超えると全額消える
+  }
+  return [0,0,0];
+}
+
+/** 扶養者の社会保険料（概算：協会けんぽ・標準報酬月額ベース） */
+function supporterShaho(shunyu, cfg) {
+  const monthly = shunyu / 12;
+  const sHealth = stdMonthly(monthly, false);
+  const sPension = stdMonthly(monthly, true);
+  const rHealth = (cfg.pHealth + cfg.pCare + cfg.pKodomo) / 100 / 2;  // 扶養者は40歳以上と仮定
+  const rPension = cfg.pPension / 100 / 2;
+  return Math.round(sHealth * rHealth) * 12 + Math.round(sPension * rPension) * 12
+       + Math.floor(shunyu * cfg.pKoyo / 100);
+}
+
+/* ========================= 統合計算 ========================= */
+
+function simulate(shunyu, cfg) {
+  const P = cfg.P;
+  const si = socialInsurance(shunyu, cfg);
+  const shotoku = kyuyoShotoku(shunyu, P);
+
+  // 本人の税額（社会保険料控除＋勤労学生控除）
+  let kojo = si.total, kojoJ = si.total, jinteki = 0;
+  const kinroOK = cfg.isStudent && shotoku <= P.kinroLimit;
+  if (kinroOK) { kojo += KINRO_GAKUSEI[0]; kojoJ += KINRO_GAKUSEI[1]; jinteki += KINRO_GAKUSEI[2]; }
+  const t = taxOf(shunyu, P, kojo, kojoJ, jinteki,
+                  { hikazeiLimit: cfg.pHikazei, juminFlat: cfg.pJuminFlat });
+
+  const net = shunyu - si.total - t.tax - t.jumin;
+
+  // 扶養者側
+  let sup = null;
+  if (cfg.hasSupporter) {
+    const supShotoku = kyuyoShotoku(cfg.supporterIncome, P);
+    const supShaho = supporterShaho(cfg.supporterIncome, cfg);
+    const mk = (honninShotoku) => {
+      const [i, j, d] = supporterDeduction(cfg.role, honninShotoku, P, supShotoku);
+      const r = taxOf(cfg.supporterIncome, P, supShaho + i, supShaho + j, d,
+                      { hikazeiLimit: cfg.pHikazei, juminFlat: cfg.pJuminFlat });
+      return { tax: r.tax, jumin: r.jumin, total: r.tax + r.jumin, kojoI: i, kojoJ: j };
+    };
+    const now  = mk(shotoku);
+    const base = mk(0);                       // 本人に収入がない場合＝控除が満額のとき
+    sup = { ...now, baseTotal: base.total, increase: now.total - base.total,
+            baseKojoI: base.kojoI, shaho: supShaho,
+            net: cfg.supporterIncome - supShaho - now.tax - now.jumin };
+  }
+
+  const houseGain = net - (sup ? sup.increase : 0);
+
+  return { shunyu, shotoku, si, tax: t.tax, jumin: t.jumin, taxDetail: t,
+           deduct: si.total + t.tax + t.jumin, net, sup, houseGain, kinroOK };
+}
+
+/* ========================= 壁の一覧 ========================= */
+
+function walls(cfg) {
+  const P = cfg.P;
+  const regime = REGIMES.find(r => r.id === cfg.regimeId) || REGIMES[1];
+  const out = [];
+  const add = (amount, name, effect, kind) => {
+    if (amount > 0 && isFinite(amount)) out.push({ amount, name, effect, kind });
+  };
+
+  const toShunyu = (shotoku) => incomeForShotoku(shotoku, P);
+
+  // --- 住民税 ---
+  add(toShunyu(cfg.pHikazei), "住民税の壁",
+      `住民税（均等割${(cfg.pJuminFlat).toLocaleString()}円＋所得割10%）がかかり始めます。`, "tax");
+
+  // --- 所得税 ---
+  const kisoTop = P.kisoIncome[0][1];
+  add(toShunyu(kisoTop), "所得税の壁",
+      `所得税がかかり始めます（給与所得控除${man(P.kyuyoKojoMin)}＋基礎控除${man(kisoTop)}）。`, "tax");
+
+  // --- 社会保険 ---
+  if (!cfg.isStudent && cfg.weekly === 1 && cfg.firmSize >= regime.firm && regime.wageReq > 0) {
+    add(regime.wageReq * 12, "106万円の壁",
+        "勤務先の厚生年金・健康保険に加入し、保険料の本人負担（約15%）が発生します。", "shaho");
+  }
+  if (cfg.hasSupporter) {
+    const si130 = socialInsurance(FUYO_NINTEI_LIMIT, cfg);
+    if (si130.status !== "shaho") {
+      add(FUYO_NINTEI_LIMIT, "130万円の壁",
+          cfg.isStudent
+            ? "健康保険の扶養から外れ、国民健康保険料が発生します（国民年金は学生納付特例で猶予可）。"
+            : "健康保険の扶養から外れ、国民健康保険料と国民年金保険料が発生します。", "shaho");
+    }
+  }
+
+  // --- 扶養者側の控除 ---
+  if (cfg.hasSupporter) {
+    const fuyoShunyu = toShunyu(P.fuyoLimit);
+    if (cfg.role === "spouse") {
+      add(fuyoShunyu, "配偶者控除の壁",
+          "配偶者控除から配偶者特別控除に移ります。控除額は満額のままで、この時点では手取りは減りません。", "family");
+      add(toShunyu(950000), "配偶者特別控除の逓減開始",
+          "扶養者の配偶者特別控除38万円が段階的に減り始め、扶養者の税額が増えていきます。", "family");
+      add(toShunyu(1330000), "配偶者特別控除の消滅",
+          "扶養者の配偶者特別控除がゼロになります。", "family");
+    } else if (cfg.role === "child1922") {
+      add(fuyoShunyu, "特定扶養控除の壁",
+          "特定扶養控除から特定親族特別控除に移ります。控除額63万円は維持されるため、扶養者の税額は変わりません。", "family");
+      add(toShunyu(850000), "特定親族特別控除の逓減開始",
+          "扶養者の控除63万円が段階的に減り始め、扶養者の税額が増えていきます。", "family");
+      add(toShunyu(1230000), "特定親族特別控除の消滅",
+          "扶養者の控除がゼロになります。ここまでで扶養者の税負担は最大になります。", "family");
+    } else if (cfg.role === "child1618" || cfg.role === "child23") {
+      add(fuyoShunyu, "扶養控除の壁",
+          "扶養者の扶養控除38万円（住民税33万円）が一気にゼロになります。段階的な緩和がなく、最も落差の大きい壁です。", "family");
+    }
+  }
+
+  // --- 多子世帯 ---
+  if (cfg.kidsCount >= 3 && cfg.uniKids >= 1 && cfg.role !== "spouse" && cfg.role !== "single") {
+    const cap = TUITION_CAP[cfg.uniType];
+    add(toShunyu(P.fuyoLimit), "多子世帯の壁",
+        `扶養する子が${cfg.kidsCount}人→${cfg.kidsCount-1}人になり、3人未満になると在学中の${cfg.uniKids}人分の授業料減免（年間最大${man(cap.tuition*cfg.uniKids)}）が失われます。`,
+        "tuition");
+  }
+
+  // 重複する金額をまとめる
+  const merged = [];
+  for (const w of out.sort((a,b) => a.amount - b.amount)) {
+    const last = merged[merged.length-1];
+    if (last && last.amount === w.amount) {
+      last.name += "／" + w.name;
+      last.effect += " " + w.effect;
+      if (w.kind === "tuition" || last.kind === "tuition") last.kind = "tuition";
+      else if (w.kind === "shaho") last.kind = "shaho";
+    } else merged.push({...w});
+  }
+  return merged;
+}
+
+/* ========================= UI ========================= */
+
+const $ = id => document.getElementById(id);
+const F = {
+  year:$("year"), role:$("role"), income:$("income"), incomeRange:$("incomeRange"),
+  isStudent:$("isStudent"), supporterIncome:$("supporterIncome"), age40:$("age40"),
+  weekly20:$("weekly20"), firmSize:$("firmSize"), regime:$("regime"),
+  kidsCount:$("kidsCount"), uniKids:$("uniKids"), uniType:$("uniType"),
+  pHealth:$("pHealth"), pCare:$("pCare"), pKodomo:$("pKodomo"), pPension:$("pPension"),
+  pKoyo:$("pKoyo"), pKokunen:$("pKokunen"), pKokuhoRate:$("pKokuhoRate"),
+  pKokuhoFlat:$("pKokuhoFlat"), pKokuhoCap:$("pKokuhoCap"),
+  pJuminFlat:$("pJuminFlat"), pHikazei:$("pHikazei"),
+};
+const DEFAULTS = {};
+Object.entries(F).forEach(([k,el]) => { DEFAULTS[k] = el.type === "checkbox" ? el.checked : el.value; });
+
+REGIMES.forEach(r => {
+  const o = document.createElement("option");
+  o.value = r.id; o.textContent = r.label; F.regime.appendChild(o);
+});
+
+function readConfig() {
+  const year = +F.year.value;
+  const P = YEARS[year];
+  const role = F.role.value;
+  const num = el => { const v = parseFloat(el.value); return isFinite(v) ? v : 0; };
+  return {
+    year, P, role,
+    hasSupporter: role !== "single",
+    income: Math.max(0, Math.min(4000000, num(F.income))),
+    isStudent: F.isStudent.checked,
+    supporterIncome: Math.max(0, num(F.supporterIncome)),
+    age40: F.age40.checked,
+    weekly: +F.weekly20.value,
+    firmSize: +F.firmSize.value,
+    regimeId: F.regime.value,
+    kidsCount: Math.max(0, num(F.kidsCount)),
+    uniKids: Math.max(0, num(F.uniKids)),
+    uniType: F.uniType.value,
+    pHealth:num(F.pHealth), pCare:num(F.pCare), pKodomo:num(F.pKodomo),
+    pPension:num(F.pPension), pKoyo:num(F.pKoyo), pKokunen:num(F.pKokunen),
+    pKokuhoRate:num(F.pKokuhoRate), pKokuhoFlat:num(F.pKokuhoFlat), pKokuhoCap:num(F.pKokuhoCap),
+    pJuminFlat:num(F.pJuminFlat), pHikazei:num(F.pHikazei),
+  };
+}
+
+const ROLE_NOTES = {
+  spouse: "配偶者控除・配偶者特別控除が効きます。",
+  child1922: "特定扶養控除と、令和7年分に新設された特定親族特別控除の対象です。",
+  child1618: "一般の扶養控除の対象。段階的な緩和がないため、所得要件を超えると控除が一度に消えます。",
+  child23: "一般の扶養控除の対象。段階的な緩和がないため、所得要件を超えると控除が一度に消えます。",
+  single: "扶養に入っていないため、家族側への影響はありません。",
+};
+
+let CURRENT = null;
+
+function render() {
+  const cfg = readConfig();
+  CURRENT = cfg;
+
+  $("yearNote").textContent = cfg.P.note;
+  $("roleNote").textContent = ROLE_NOTES[cfg.role];
+  const rg = REGIMES.find(r => r.id === cfg.regimeId);
+  $("regimeNote").textContent = rg.wageReq > 0
+    ? `賃金要件 月額${rg.wageReq.toLocaleString()}円以上・従業員${rg.firm}人以上`
+    : `賃金要件は撤廃済み。従業員${rg.firm}人以上が対象`;
+
+  const r = simulate(cfg.income, cfg);
+  renderSummary(r, cfg);
+  renderChart(cfg);
+  renderStack(r, cfg);
+  renderWalls(r, cfg);
+  renderTashi(cfg);
+}
+
+/* ---------- サマリ ---------- */
+function renderSummary(r, cfg) {
+  const st = r.si.status;
+  const stLabel = st === "shaho" ? "勤務先の社会保険に加入"
+                : st === "fuyou" ? "扶養内（社会保険料の本人負担なし）"
+                : "国民健康保険＋国民年金";
+  $("statusLine").textContent =
+    `${cfg.P.label}／${stLabel}／住民税は${cfg.P.juminLabel}分として計算`;
+
+  $("tNet").textContent = yen(r.net);
+  $("tNetSub").textContent = `額面 ${yen(cfg.income)} の ${(cfg.income ? r.net/cfg.income*100 : 0).toFixed(1)}%`;
+
+  $("tDeduct").textContent = yen(r.deduct);
+  $("tDeductSub").textContent =
+    `社保 ${yen(r.si.total)}／所得税 ${yen(r.tax)}／住民税 ${yen(r.jumin)}`;
+
+  if (r.sup) {
+    $("tParent").textContent = r.sup.increase > 0 ? "+" + yen(r.sup.increase) : yen(0);
+    $("tParent").style.color = r.sup.increase > 0 ? "var(--st-critical)" : "";
+    $("tParentSub").textContent = r.sup.increase > 0
+      ? `年収${man(cfg.supporterIncome)}の扶養者の税が増えます`
+      : "控除は満額のまま。扶養者の税は増えていません";
+  } else {
+    $("tParent").textContent = "—";
+    $("tParent").style.color = "";
+    $("tParentSub").textContent = "扶養に入っていないため影響なし";
+  }
+
+  $("tHouse").textContent = yen(r.houseGain);
+  $("tHouseSub").textContent = "あなたの手取り − 扶養者の増税分";
+
+  // --- コールアウト ---
+  const box = $("callouts");
+  box.innerHTML = "";
+  const push = (cls, icon, title, html) => {
+    const d = document.createElement("div");
+    d.className = "callout " + cls;
+    d.innerHTML = `<div class="ttl">${icon} ${title}</div>${html}`;
+    box.appendChild(d);
+  };
+
+  // 手取りの逆転が起きているか（少し働くのを控えたほうが得な区間の検出）
+  const rev = findReversal(cfg);
+  if (rev) {
+    push("crit", "⚠", `手取りの逆転が起きています${rev.cause ? "：" + rev.cause.name : ""}`,
+      `働く時間を増やしても世帯の手取りが減る区間があります。年収 <b>${man(rev.peak)}</b> のときの世帯手取り増加額 <b>${yen(rev.netPeak)}</b> に対し、年収 <b>${man(rev.at)}</b> では <b>${yen(rev.netAt)}</b> と <b>${yen(rev.drop)}</b> 下回ります。元の水準に戻るのは年収 <b>${rev.recover ? man(rev.recover) : "300万円超"}</b> からです。`);
+  }
+
+  // 次の壁までの距離
+  const ws = walls(cfg);
+  const next = ws.find(w => w.amount > cfg.income);
+  if (next) {
+    push(next.kind === "tuition" ? "crit" : "warn", "→", `次の壁：${man(next.amount)}（${next.name}）`,
+      `いまの年収から <b>あと ${yen(next.amount - cfg.income)}</b>。${next.effect}`);
+  } else {
+    push("good", "✓", "この先に壁はありません",
+      "選択中の条件では、これ以上の年収でも新たに発生する壁はありません。収入が増えた分は手取りに反映されます。");
+  }
+
+  if (r.kinroOK) {
+    push("good", "✓", "勤労学生控除が適用されています",
+      `所得税27万円・住民税26万円が上乗せで控除されています。合計所得が${man(cfg.P.kinroLimit)}（給与収入 約${man(shunyuFor(cfg.P.kinroLimit, cfg.P))}）を超えると使えなくなります。`);
+  }
+  if (r.si.status === "kokuho" && r.si.studentDeferred) {
+    push("warn", "!", "国民年金は学生納付特例を前提にしています",
+      "申請しない場合は月額 " + yen(cfg.pKokunen) + " の負担が別途発生します。将来の年金額にも影響します。");
+  }
+  if (cfg.P.provisional) {
+    push("warn", "!", "この年分は予定値です",
+      "令和10年分は基礎控除・給与所得控除の特例が終了した後の見込みであり、今後の税制改正で変わります。");
+  }
+}
+
+const shunyuFor = (shotoku, P) => incomeForShotoku(shotoku, P);
+
+/**
+ * 世帯ベースの手取りが逆転している区間のうち、最も落差の大きいものを返す。
+ * 標準報酬月額の等級刻みによる数万円の小さな段差はノイズなので MIN_DROP で除外する。
+ */
+const REVERSAL_MIN_DROP = 50000;
+function findReversal(cfg) {
+  const step = 10000, max = 3000000;
+  const curve = [];
+  for (let s = 0; s <= max; s += step) curve.push({ x:s, y: simulate(s, cfg).houseGain });
+
+  let peakX = 0, peakY = -Infinity, best = null;
+  for (const p of curve) {
+    if (p.y > peakY) { peakY = p.y; peakX = p.x; continue; }
+    const drop = peakY - p.y;
+    if (drop >= REVERSAL_MIN_DROP && (!best || drop > best.drop))
+      best = { at:p.x, netAt:p.y, peak:peakX, netPeak:peakY, drop };
+  }
+  if (!best) return null;
+
+  let recover = null;
+  for (const p of curve) if (p.x > best.at && p.y >= best.netPeak) { recover = p.x; break; }
+
+  // どの壁が原因かを特定する（谷の直前で越えた壁）
+  const cause = walls(cfg).filter(w => w.amount > best.peak && w.amount <= best.at).pop() ?? null;
+  return { ...best, recover, cause };
+}
+
+/* ---------- 折れ線グラフ ---------- */
+const CH = { w:900, h:400, ml:74, mr:22, mt:18, mb:52 };
+
+function renderChart(cfg) {
+  const svg = $("chart");
+  const maxX = 3000000, step = 10000;
+  const pts = [];
+  for (let s = 0; s <= maxX; s += step) {
+    const r = simulate(s, cfg);
+    pts.push({ x:s, net:r.net, gain:r.houseGain, si:r.si, tax:r.tax, jumin:r.jumin, shaho:r.si.total });
+  }
+  const maxY = maxX;
+  const X = v => CH.ml + (v / maxX) * (CH.w - CH.ml - CH.mr);
+  const Y = v => CH.h - CH.mb - (v / maxY) * (CH.h - CH.mt - CH.mb);
+
+  let g = `<title id="chartTitle">年収に対する手取りと世帯手取り増加額の推移</title>`;
+
+  // グリッド＋軸ラベル
+  for (let v = 0; v <= maxY; v += 500000) {
+    g += `<line x1="${CH.ml}" y1="${Y(v)}" x2="${CH.w-CH.mr}" y2="${Y(v)}" stroke="var(--grid)" stroke-width="1"/>`;
+    g += `<text x="${CH.ml-9}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--text-muted)" style="font-variant-numeric:tabular-nums">${(v/10000).toLocaleString()}万</text>`;
+  }
+  for (let v = 0; v <= maxX; v += 500000) {
+    g += `<text x="${X(v)}" y="${CH.h-CH.mb+18}" text-anchor="middle" font-size="11" fill="var(--text-muted)" style="font-variant-numeric:tabular-nums">${(v/10000).toLocaleString()}万</text>`;
+  }
+  g += `<text x="${(CH.ml+CH.w-CH.mr)/2}" y="${CH.h-8}" text-anchor="middle" font-size="11" fill="var(--text-secondary)">額面年収</text>`;
+  g += `<line x1="${CH.ml}" y1="${Y(0)}" x2="${CH.w-CH.mr}" y2="${Y(0)}" stroke="var(--axis)" stroke-width="1"/>`;
+
+  // 参考線：額面年収そのもの
+  g += `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(maxX)}" y2="${Y(maxX)}" stroke="var(--text-muted)" stroke-width="1" opacity=".55"/>`;
+
+  // 壁の縦線（この立場に関係するものだけラベルを出す）
+  const ws = walls(cfg).filter(w => w.amount <= maxX);
+  ws.forEach((w, i) => {
+    const col = w.kind === "tuition" ? "var(--st-critical)"
+              : w.kind === "shaho" ? "var(--st-warning)" : "var(--axis)";
+    g += `<line x1="${X(w.amount)}" y1="${CH.mt}" x2="${X(w.amount)}" y2="${Y(0)}" stroke="${col}" stroke-width="1" opacity=".75"/>`;
+    const ty = CH.mt + 11 + (i % 3) * 15;
+    g += `<text x="${X(w.amount)+4}" y="${ty}" font-size="10" fill="var(--text-muted)" style="font-variant-numeric:tabular-nums">${(w.amount/10000).toFixed(0)}万</text>`;
+  });
+
+  const path = key => "M" + pts.map(p => `${X(p.x).toFixed(1)} ${Y(Math.max(0,p[key])).toFixed(1)}`).join(" L");
+  g += `<path d="${path("gain")}" fill="none" stroke="var(--series-2)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  g += `<path d="${path("net")}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+
+  // 現在位置のマーカー（サーフェスリング付き）
+  const cur = pts[Math.round(Math.min(cfg.income, maxX) / step)];
+  if (cur) {
+    g += `<line x1="${X(cur.x)}" y1="${CH.mt}" x2="${X(cur.x)}" y2="${Y(0)}" stroke="var(--text-primary)" stroke-width="1" opacity=".35"/>`;
+    g += `<circle cx="${X(cur.x)}" cy="${Y(Math.max(0,cur.gain))}" r="5" fill="var(--series-2)" stroke="var(--surface-1)" stroke-width="2"/>`;
+    g += `<circle cx="${X(cur.x)}" cy="${Y(Math.max(0,cur.net))}" r="5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"/>`;
+  }
+  g += `<rect id="hitzone" x="${CH.ml}" y="${CH.mt}" width="${CH.w-CH.ml-CH.mr}" height="${CH.h-CH.mt-CH.mb}" fill="transparent"/>`;
+  svg.innerHTML = g;
+
+  // ホバー
+  const tip = $("tip"), box = $("chartBox");
+  const move = ev => {
+    const rect = svg.getBoundingClientRect();
+    const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+    const cy = ev.touches ? ev.touches[0].clientY : ev.clientY;
+    const sx = (cx - rect.left) / rect.width * CH.w;
+    if (sx < CH.ml || sx > CH.w - CH.mr) { tip.style.opacity = 0; return; }
+    const val = (sx - CH.ml) / (CH.w - CH.ml - CH.mr) * maxX;
+    const p = pts[Math.max(0, Math.min(pts.length-1, Math.round(val/step)))];
+    const stl = p.si.status === "shaho" ? "勤務先の社保" : p.si.status === "fuyou" ? "扶養内" : "国保・国民年金";
+    tip.innerHTML =
+      `<div class="th">年収 ${man(p.x)}<span class="pill" style="margin-left:6px">${stl}</span></div>` +
+      `<div class="tr"><span><i class="tk" style="background:var(--series-1)"></i>あなたの手取り</span><span>${yen(p.net)}</span></div>` +
+      `<div class="tr"><span><i class="tk" style="background:var(--series-2)"></i>世帯の増加額</span><span>${yen(p.gain)}</span></div>` +
+      `<div class="tr"><span>社会保険料</span><span>${yen(p.shaho)}</span></div>` +
+      `<div class="tr"><span>所得税＋住民税</span><span>${yen(p.tax + p.jumin)}</span></div>`;
+    tip.style.opacity = 1;
+    const bx = box.getBoundingClientRect();
+    let left = cx - bx.left + 14;
+    if (left + tip.offsetWidth > bx.width) left = cx - bx.left - tip.offsetWidth - 14;
+    tip.style.left = Math.max(0, left) + "px";
+    tip.style.top = Math.max(0, cy - bx.top - tip.offsetHeight - 12) + "px";
+  };
+  svg.onmousemove = move;
+  svg.ontouchmove = ev => { move(ev); ev.preventDefault(); };
+  svg.onmouseleave = () => tip.style.opacity = 0;
+  svg.ontouchend = () => tip.style.opacity = 0;
+}
+
+/* ---------- 内訳バー ---------- */
+function renderStack(r, cfg) {
+  const svg = $("stack");
+  const W = 900, H = 92, pad = 0, barY = 14, barH = 30, gap = 2;
+  const total = Math.max(1, cfg.income);
+  const segs = [
+    { label:"手取り",     v:Math.max(0,r.net),    c:"var(--series-1)" },
+    { label:"社会保険料", v:r.si.total,           c:"var(--series-2)" },
+    { label:"所得税",     v:r.tax,                c:"var(--series-3)" },
+    { label:"住民税",     v:r.jumin,              c:"var(--series-4)" },
+  ].filter(s => s.v > 0);
+
+  let x = pad, g = "";
+  segs.forEach((s, i) => {
+    const w = Math.max(0, (s.v / total) * (W - pad*2) - (i < segs.length-1 ? gap : 0));
+    if (w > 0) {
+      g += `<rect x="${x.toFixed(1)}" y="${barY}" width="${w.toFixed(1)}" height="${barH}" rx="4" fill="${s.c}"/>`;
+      // ラベルは実測で収まるときだけバー内に置く
+      const txt = `${s.label} ${(s.v/total*100).toFixed(1)}%`;
+      if (w > txt.length * 11 + 16) {
+        g += `<text x="${(x + w/2).toFixed(1)}" y="${barY + barH/2 + 4}" text-anchor="middle" font-size="12" font-weight="600" fill="${i===0?'#fff':'#0b0b0b'}">${txt}</text>`;
+      }
+    }
+    x += (s.v / total) * (W - pad*2);
+  });
+  g += `<text x="0" y="${barY + barH + 22}" font-size="12" fill="var(--text-secondary)">額面 ${yen(cfg.income)}</text>`;
+  g += `<text x="${W}" y="${barY + barH + 22}" text-anchor="end" font-size="12" fill="var(--text-secondary)">手取り ${yen(r.net)}（${cfg.income?(r.net/cfg.income*100).toFixed(1):0}%）</text>`;
+  svg.innerHTML = g;
+
+  const tb = $("breakdownTbl").querySelector("tbody");
+  const si = r.si;
+  const rows = [
+    ["手取り", r.net, "額面から下の3項目を差し引いた金額"],
+    ["社会保険料 合計", si.total,
+      si.status === "shaho" ? `健康保険 ${yen(si.health)}／厚生年金 ${yen(si.pension)}／雇用保険 ${yen(si.koyo)}`
+      : si.status === "kokuho" ? `国民健康保険 ${yen(si.health)}／国民年金 ${yen(si.pension)}${si.studentDeferred?"（学生納付特例）":""}／雇用保険 ${yen(si.koyo)}`
+      : `扶養内のため健康保険・年金の本人負担なし／雇用保険 ${yen(si.koyo)}`],
+    ["所得税", r.tax, `課税所得 ${yen(r.taxDetail.kazeiI)}（基礎控除 ${yen(r.taxDetail.kisoI)}）・復興特別所得税込み`],
+    ["住民税", r.jumin, r.taxDetail.hikazei ? "非課税限度額以下のため非課税"
+      : `所得割10%＋均等割 ${yen(cfg.pJuminFlat)}（基礎控除 ${yen(r.taxDetail.kisoJ)}）`],
+  ];
+  tb.innerHTML = rows.map(([k,v,d]) =>
+    `<tr><td>${k}</td><td class="num">${yen(v)}</td><td class="num">${cfg.income?(v/cfg.income*100).toFixed(1):"0.0"}%</td><td style="color:var(--text-secondary)">${d}</td></tr>`
+  ).join("");
+}
+
+/* ---------- 壁の表 ---------- */
+function renderWalls(r, cfg) {
+  const tb = $("wallTbl").querySelector("tbody");
+  const ws = walls(cfg);
+  if (!ws.length) { tb.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted)">この条件では該当する壁がありません。</td></tr>`; return; }
+  let lastHit = -1;
+  ws.forEach((w,i) => { if (cfg.income >= w.amount) lastHit = i; });
+  tb.innerHTML = ws.map((w,i) => {
+    const s = simulate(w.amount, cfg);
+    const kindPill = w.kind === "tuition" ? "学費支援" : w.kind === "shaho" ? "社会保険"
+                   : w.kind === "family" ? "家族の税" : "本人の税";
+    return `<tr class="${i===lastHit?"hit":""}">
+      <td class="num">${man(w.amount)}</td>
+      <td>${w.name}<br><span class="pill">${kindPill}</span></td>
+      <td style="color:var(--text-secondary)">${w.effect}</td>
+      <td class="num">${yen(s.net)}</td>
+      <td class="num">${yen(s.houseGain)}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* ---------- 多子世帯 ---------- */
+function renderTashi(cfg) {
+  const body = $("tashiBody");
+  const cap = TUITION_CAP[cfg.uniType];
+  const P = cfg.P;
+
+  if (cfg.role === "spouse" || cfg.role === "single") {
+    body.innerHTML = `<div class="callout">この制度は「生計維持者に扶養されている子」の人数で判定されます。選択中の立場（${cfg.role==="spouse"?"配偶者":"扶養に入っていない"}）では直接の影響がありません。</div>`;
+    return;
+  }
+  if (cfg.kidsCount < 3) {
+    body.innerHTML = `<div class="callout">扶養している子が <b>${cfg.kidsCount}人</b> のため、多子世帯（3人以上）の要件を満たしていません。<br>この場合、修学支援は世帯所得に応じた区分判定（第I〜IV区分）となり、所得制限があります。</div>`;
+    return;
+  }
+
+  const limitShunyu = incomeForShotoku(P.fuyoLimit, P);
+  const lost = cap.tuition * cfg.uniKids;
+  const over = cfg.income > limitShunyu;
+  const stillOK = cfg.kidsCount - 1 >= 3;
+
+  let html = `<div class="hero-row">
+    <div class="tile"><div class="k">扶養している子</div><div class="v">${cfg.kidsCount}人</div><div class="d">うち大学等に在学中 ${cfg.uniKids}人</div></div>
+    <div class="tile"><div class="k">減免の上限（${cap.label}）</div><div class="v">${man(cap.tuition)}</div><div class="d">授業料／年・1人あたり。入学金は別途 ${man(cap.entrance)}</div></div>
+    <div class="tile"><div class="k">扶養から外れる年収</div><div class="v">${man(limitShunyu)}</div><div class="d">合計所得 ${man(P.fuyoLimit)} を超える年収</div></div>
+    <div class="tile"><div class="k">失われる支援額</div><div class="v" style="color:${stillOK?'':'var(--st-critical)'}">${stillOK ? yen(0) : man(lost)}</div><div class="d">${stillOK ? "1人抜けても3人以上を維持できます" : "在学中 "+cfg.uniKids+"人分の授業料減免／年"}</div></div>
+  </div>`;
+
+  if (stillOK) {
+    html += `<div class="callout good"><div class="ttl">✓ 影響は限定的です</div>あなたが扶養から外れても扶養する子は ${cfg.kidsCount-1}人 で、3人以上の要件を維持できます。ただし他のきょうだいの就職・卒業が重なると要件を割り込みます。</div>`;
+  } else if (over) {
+    html += `<div class="callout crit"><div class="ttl">⚠ すでに要件を割り込んでいます</div>あなたの年収 <b>${man(cfg.income)}</b> は扶養の所得要件（給与収入 ${man(limitShunyu)}）を超えているため、扶養する子は ${cfg.kidsCount-1}人 となり多子世帯の要件（3人以上）を満たしません。在学中の ${cfg.uniKids}人分、<b>年間 最大 ${man(lost)}</b> の授業料減免が失われます。<br><br>この金額は、あなたが年収を ${man(limitShunyu)} に抑えた場合と比べた手取りの増加分を大きく上回る可能性があります。世帯全体で必ず試算してください。</div>`;
+  } else {
+    html += `<div class="callout warn"><div class="ttl">→ あと ${yen(limitShunyu - cfg.income)} で要件を割り込みます</div>年収が <b>${man(limitShunyu)}</b> を超えると扶養する子が ${cfg.kidsCount-1}人 となり、在学中の ${cfg.uniKids}人分、<b>年間 最大 ${man(lost)}</b> の授業料減免が失われます。所得税や社会保険料の壁とは桁が違う、最も大きな壁です。</div>`;
+  }
+  html += `<div class="callout"><div class="ttl">注意</div>「扶養する子」の判定基準は制度運営上の定義によります（本ツールは税法上の扶養親族の所得要件で近似しています）。上の子が就職して扶養を外れた場合も同様に人数が減ります。適用の可否は必ず在学先および日本学生支援機構にご確認ください。</div>`;
+  body.innerHTML = html;
+}
+
+/* ---------- URL共有 ---------- */
+function toQuery() {
+  const p = new URLSearchParams();
+  Object.entries(F).forEach(([k,el]) => {
+    const v = el.type === "checkbox" ? (el.checked ? "1" : "0") : el.value;
+    if (String(v) !== String(DEFAULTS[k])) p.set(k, v);
+  });
+  return p.toString();
+}
+function fromQuery() {
+  const p = new URLSearchParams(location.search);
+  if (![...p.keys()].length) return;
+  Object.entries(F).forEach(([k,el]) => {
+    if (!p.has(k)) return;
+    if (el.type === "checkbox") el.checked = p.get(k) === "1";
+    else el.value = p.get(k);
+  });
+}
+
+/* ---------- 初期化 ---------- */
+function syncIncome(src) {
+  const v = Math.max(0, Math.min(4000000, parseFloat(src.value) || 0));
+  F.income.value = v;
+  F.incomeRange.value = Math.min(3000000, v);
+}
+F.income.addEventListener("input", () => { syncIncome(F.income); render(); });
+F.incomeRange.addEventListener("input", () => { F.income.value = F.incomeRange.value; render(); });
+F.year.addEventListener("change", () => { F.regime.value = REGIME_BY_YEAR[+F.year.value]; render(); });
+Object.values(F).forEach(el => {
+  if (el === F.income || el === F.incomeRange) return;
+  el.addEventListener("input", render);
+  el.addEventListener("change", render);
+});
+
+$("btnShare").addEventListener("click", async () => {
+  const url = location.origin + location.pathname + (toQuery() ? "?" + toQuery() : "");
+  try { await navigator.clipboard.writeText(url); }
+  catch { prompt("以下のURLをコピーしてください", url); }
+  const c = $("copied"); c.hidden = false; setTimeout(() => c.hidden = true, 2200);
+});
+$("btnReset").addEventListener("click", () => {
+  Object.entries(F).forEach(([k,el]) => {
+    if (el.type === "checkbox") el.checked = DEFAULTS[k]; else el.value = DEFAULTS[k];
+  });
+  history.replaceState(null, "", location.pathname);
+  render();
+});
+
+// 基準日が古くなったら注意バーを出す
+(function staleCheck() {
+  const today = new Date();
+  if (today > new Date(REVIEW_DUE)) {
+    const b = $("staleBadge");
+    b.hidden = false;
+    b.className = "badge warn";
+    b.innerHTML = `<span class="dot" style="background:var(--st-warning)"></span>制度基準日から更新期限を過ぎています。最新の改正をご確認ください`;
+  }
+  $("basisBadge").textContent = "制度基準日：" + BASIS_DATE.replace(/-/g, "/");
+})();
+
+fromQuery();
+F.regime.value = F.regime.value || REGIME_BY_YEAR[+F.year.value];
+if (!new URLSearchParams(location.search).has("regime")) F.regime.value = REGIME_BY_YEAR[+F.year.value];
+render();
+
+// テスト用にエンジンを公開（ブラウザでは未使用）
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { YEARS, kyuyoShotoku, incomeForShotoku, incomeTax, taxOf, simulate, walls,
+                     socialInsurance, supporterDeduction, lookup, TOKUTEI_SHINZOKU,
+                     HAIGUSHA_TOKUBETSU_I, stdMonthly };
+}
+</script>
