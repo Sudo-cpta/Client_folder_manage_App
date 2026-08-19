@@ -1,6 +1,14 @@
 <title>年収の壁シミュレーター</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="令和7〜9年分の税制・社会保険に対応した年収の壁シミュレーター。配偶者・学生・19〜22歳の子など立場別に、手取りと家族の税負担への影響を試算します。">
+<meta name="description" content="令和7〜10年分の税制・社会保険に対応した年収の壁シミュレーター。配偶者・学生・19〜22歳の子など立場別に、手取りと家族の税負担への影響を試算します。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="年収の壁シミュレーター">
+<meta property="og:description" content="令和7〜10年分の税制・社会保険に対応した年収の壁シミュレーター。配偶者・学生・19〜22歳の子など立場別に、手取りと家族の税負担への影響を試算します。">
+<meta property="og:locale" content="ja_JP">
+<meta name="twitter:card" content="summary_large_image">
+<!-- 公開先のURLが決まったら、以下2行を実際の絶対URLで追記してください
+     <meta property="og:url" content="https://example.com/">
+     <meta property="og:image" content="https://example.com/ogp.png">   1200×630 推奨 -->
 
 <style>
 /* ============================================================
@@ -244,6 +252,7 @@ button.act:hover { background: var(--surface-2); }
   <p class="sub">立場・年分・働き方を変えると、手取りと <b>家族の税負担</b> がどう動くかを試算します。</p>
   <div class="badges">
     <span class="badge" id="basisBadge">制度基準日：2026年8月16日</span>
+    <span class="badge" id="versionBadge"></span>
     <span class="badge" id="staleBadge" hidden></span>
     <span class="badge">概算・個別判断は要相談</span>
   </div>
@@ -510,6 +519,11 @@ button.act:hover { background: var(--surface-2); }
   <ul>
     <li>毎年1月（税制改正大綱の反映）および4月（保険料率改定の反映）に見直します。</li>
   </ul>
+
+  <h3>版数と更新履歴</h3>
+  <ul id="changelog"></ul>
+
+  <div id="providedBy"></div>
 </footer>
 
 </div>
@@ -522,6 +536,15 @@ button.act:hover { background: var(--surface-2); }
    すべての制度パラメータはこのブロックに集約してあります。
    法改正時はここだけを差し替えれば全画面に反映されます。
    ========================================================================== */
+
+const VERSION = "2026年8月版";
+const CHANGELOG = [
+  ["2026年8月版", "令和8年度税制改正を反映（所得税の非課税ライン178万円、扶養の所得要件62万円）。社会保険の適用拡大タイムライン（2026年10月の賃金要件撤廃ほか）に対応。国民健康保険を概算／自治体料率入力の2モードに。令和10年分を予定値として追加。"],
+];
+
+/* 公開時に事務所名・URL・問い合わせ先を入れると、フッタに「提供」欄が表示されます。
+   空のままなら何も表示されません（誤った情報が公開されないようにするための既定値です）。 */
+const SITE = { office: "", url: "", contact: "" };
 
 const BASIS_DATE = "2026-08-16";
 const REVIEW_DUE = "2027-01-31";   // これを過ぎたら画面上部に注意バーを出す
@@ -1404,6 +1427,15 @@ $("btnReset").addEventListener("click", () => {
     b.innerHTML = `<span class="dot" style="background:var(--st-warning)"></span>制度基準日から更新期限を過ぎています。最新の改正をご確認ください`;
   }
   $("basisBadge").textContent = "制度基準日：" + BASIS_DATE.replace(/-/g, "/");
+  $("versionBadge").textContent = VERSION;
+  $("changelog").innerHTML = CHANGELOG
+    .map(([v, d]) => `<li><b>${v}</b> — ${d}</li>`).join("");
+  if (SITE.office) {
+    const parts = [SITE.office];
+    if (SITE.url) parts.push(`<a href="${SITE.url}" rel="noopener">${SITE.url}</a>`);
+    if (SITE.contact) parts.push(SITE.contact);
+    $("providedBy").innerHTML = `<h3>提供</h3><p style="margin:0">${parts.join("　／　")}</p>`;
+  }
 })();
 
 fromQuery();
