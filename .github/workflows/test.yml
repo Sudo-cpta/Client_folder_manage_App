@@ -1,0 +1,18 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    name: 計算エンジンの検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # index.html から計算エンジンを直接抽出して検証する（出荷するコードそのものをテストする）
+      - run: node test-engine.mjs
