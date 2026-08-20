@@ -94,9 +94,23 @@ node test-engine.mjs
 
 ## 公開時にやること
 
-1. `SITE` に事務所名・URL・問い合わせ先を入れる（フッタに「提供」欄が出ます）
-2. `index.html` 冒頭のコメントに従い、`og:url` と `og:image`（1200×630の絶対URL）を実際の公開URLで追記する
-3. `VERSION` と `CHANGELOG` を更新する
+公開先： https://www.oshieteyosshi.com/nenshu-kabe/ （想定パス）
+
+1. `index.html` と `ogp.png` を**同じフォルダに**アップロードする
+2. パスが `/nenshu-kabe/` 以外になる場合は、`index.html` 冒頭の `og:url` と `og:image` を実際のURLに書き換える
+3. 制度を更新したら `VERSION` と `CHANGELOG` を更新する
+
+`SITE`（事務所名・問い合わせ先）は空のままにしています。事務所サイト内に設置するため、
+周囲に事務所の情報がある前提です。単体で配布する場合はここを設定してください。
+
+## ファイル
+
+| ファイル | 役割 |
+|---|---|
+| `index.html` | 本体。これ1つで動作します |
+| `ogp.png` | SNSカード表示用の画像（1200×630）。`node tools/make-ogp.mjs` で再生成できます |
+| `test-engine.mjs` | 計算エンジンの検証（141件） |
+| `tools/make-ogp.mjs` | OGP画像の生成スクリプト。カーブは実際の計算結果から描画します |
 
 ## 既知の近似
 
