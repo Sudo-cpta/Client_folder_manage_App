@@ -344,7 +344,7 @@ button.act:hover { background: var(--surface-2); }
     <div class="field">
       <label for="kokuhoMode">国民健康保険料の計算方法</label>
       <select id="kokuhoMode">
-        <option value="estimate" selected>全国的な水準でざっくり概算する</option>
+        <option value="estimate" selected>概算する（本ツール独自の仮定値）</option>
         <option value="manual">お住まいの自治体の料率を入力する（正確）</option>
       </select>
       <span class="note" id="kokuhoNote"></span>
@@ -355,12 +355,13 @@ button.act:hover { background: var(--surface-2); }
     <div class="callout">
       <div class="ttl">📄 料率の調べ方</div>
       お住まいの市区町村のホームページで「<b>国民健康保険料 計算方法</b>」または「国民健康保険税 税率」を検索してください。
-      令和8年度から <b>医療分・後期高齢者支援金分・介護納付金分（40〜64歳）・子ども子育て支援納付金分</b> の4区分になっています。
+      令和8年度から <b>医療分・後期高齢者支援金分・介護納付金分（40〜64歳）・子ども子育て支援納付金分</b> の4区分になっています。自治体によって <b>所得割・均等割・平等割</b> のどれを採用するかが異なります（東京23区には平等割がありません）。
       下の欄には、<b>あなたに適用される区分の合計</b>を入力してください（40歳未満の方は介護納付金分を除いた合計）。
     </div>
     <div class="grid" style="margin-top:14px">
-      <div class="field"><label for="pKokuhoRate">所得割率（％・全区分の合計）</label><input type="number" id="pKokuhoRate" step="0.01" value="12.50"></div>
-      <div class="field"><label for="pKokuhoFlat">均等割（円／年・1人あたり・全区分の合計）</label><input type="number" id="pKokuhoFlat" step="100" value="66300"></div>
+      <div class="field"><label for="pKokuhoRate">所得割率（％・全区分の合計）</label><input type="number" id="pKokuhoRate" step="0.01" value="10.61"></div>
+      <div class="field"><label for="pKokuhoFlat">均等割（円／年・1人あたり・全区分の合計）</label><input type="number" id="pKokuhoFlat" step="100" value="35000"></div>
+      <div class="field"><label for="pKokuhoByosei">平等割（円／年・1世帯あたり・全区分の合計）</label><input type="number" id="pKokuhoByosei" step="100" value="30000"><span class="note">東京23区など平等割のない自治体では 0 を入力してください。</span></div>
       <div class="field"><label for="pKokuhoCap">賦課限度額（円／年）</label><input type="number" id="pKokuhoCap" step="10000" value="1130000"><span class="note">令和8年度は113万円（医療65万＋支援金26万＋介護17万＋子ども子育て支援3万）</span></div>
     </div>
   </div>
@@ -499,20 +500,24 @@ button.act:hover { background: var(--surface-2); }
     <li>令和7年度税制改正（令和7年分〜）および令和8年度税制改正（令和8年分〜）を反映しています。</li>
     <li>基礎控除の上乗せ特例と給与所得控除の5万円上乗せは<b>令和8年分・令和9年分限り</b>です。令和10年分は特例終了後の予定値であり、今後の改正で変わり得ます。</li>
     <li>住民税は前年の所得に対して翌年度に課税されます（例：令和8年分の所得 → 令和9年度の住民税）。本ツールは「その年の収入に対して生じる税額」として表示しています。</li>
+    <li>給与所得の金額は、給与所得控除の最低保障額と計算式が切り替わる境界（令和8・9年分は給与収入2,191,000〜2,199,999円）で国税庁の表による定額処理を行っています。なお給与収入220万円〜660万円未満の範囲について、本ツールは計算式で1円単位に算出しており、国税庁「給与所得控除後の給与等の金額の表」の4,000円区分による丸めは行っていません（差は給与所得で最大1,400円程度、税額で数百円程度です）。</li>
+    <li>調整控除に用いる人的控除の差額は地方税法上の定額です。<b>特定親族特別控除および配偶者特別控除の差額は0円</b>であり、所得税と住民税の控除額の実差（63万円と45万円の差など）ではありません。</li>
     <li>社会保険の適用拡大は、2026年10月に賃金要件（月額8.8万円）が撤廃され、企業規模要件が2027年10月以降に段階的に撤廃されます。</li>
-    <li>国民健康保険料は「概算」と「自治体の料率を入力」の2モードから選べます。既定の概算は全国的な水準の目安であり、桁を掴むためのものです。金額を根拠に判断される場合は、必ずお住まいの市区町村の料率を入力してください。令和8年度から医療分・後期高齢者支援金分・介護納付金分・子ども子育て支援納付金分の4区分となり、賦課限度額の合計は113万円です。</li>
+    <li>国民健康保険料は「概算」と「自治体の料率を入力」の2モードから選べます。<b>概算モードの料率は法令や国が定めた全国標準値ではなく、本ツール独自の仮定値です</b>（公式な全国標準値は存在しません）。桁を掴むためのものとお考えください。所得割・均等割・平等割と、均等割・平等割の軽減（7割／5割／2割）を単身世帯として計算しています。金額を根拠に判断される場合は、必ずお住まいの市区町村の料率を入力してください。令和8年度から医療分・後期高齢者支援金分・介護納付金分・子ども子育て支援納付金分の4区分となり、賦課限度額の合計は113万円です。</li>
   </ul>
 
   <h3>主な出典</h3>
   <ul>
-    <li>国税庁「令和7年度／令和8年度税制改正による所得税の基礎控除の見直し等について」</li>
+    <li>国税庁「令和7年度／令和8年度税制改正による所得税の基礎控除の見直し等について」および同Q&A</li>
+    <li>国税庁「令和8年分 年末調整等のための給与所得控除後の給与等の金額の表」</li>
     <li>財務省「令和8年度税制改正の大綱」（令和7年12月26日閣議決定）</li>
     <li>全国健康保険協会「令和8年度保険料額表（東京都）」健康保険 9.85%／介護 1.62%／子ども・子育て支援金 0.23%</li>
     <li>日本年金機構「令和8年度 国民年金保険料」月額17,920円</li>
     <li>厚生労働省「年金制度改正法（2025年6月成立）」短時間労働者への適用拡大</li>
     <li>厚生労働省「雇用保険料率（令和8年度）」一般の事業・労働者負担 0.5%</li>
     <li>文部科学省・日本学生支援機構「高等教育の修学支援新制度（多子世帯の授業料等無償化）」</li>
-    <li>東京都保健医療局「令和8年度 国民健康保険事業費納付金及び標準保険料率」</li>
+    <li>各市区町村「令和8年度 国民健康保険料（税）の料率」（所得割・均等割・平等割は自治体ごとに異なります）</li>
+    <li>各市区町村「調整控除における人的控除額の差額一覧」</li>
   </ul>
 
   <h3>更新予定</h3>
@@ -537,8 +542,9 @@ button.act:hover { background: var(--surface-2); }
    法改正時はここだけを差し替えれば全画面に反映されます。
    ========================================================================== */
 
-const VERSION = "2026年8月版";
+const VERSION = "2026年8月版 rev.2";
 const CHANGELOG = [
+  ["2026年8月版 rev.2", "一次資料に基づく監査を反映。調整控除の人的控除差を独立マスタ化し、特定親族特別控除・配偶者特別控除の差額を0円に修正（従来は所得税と住民税の控除額の実差を用いており、扶養者の住民税を最大9,000円過小に計上していた）。給与所得控除の境界帯（給与収入2,191,000〜2,199,999円）の定額処理を追加。国民健康保険に平等割と均等割・平等割の軽減（7割／5割／2割）を追加。"],
   ["2026年8月版", "令和8年度税制改正を反映（所得税の非課税ライン178万円、扶養の所得要件62万円）。社会保険の適用拡大タイムライン（2026年10月の賃金要件撤廃ほか）に対応。国民健康保険を概算／自治体料率入力の2モードに。令和10年分を予定値として追加。"],
 ];
 
@@ -573,6 +579,7 @@ const YEARS = {
   2026: {
     label: "令和8年分（2026年）", juminLabel: "令和9年度",
     kyuyoKojoMin: 740000,   // 本則69万＋令和8・9年分限りの特例5万
+    kyuyoBands: [[2191000,2193000,1451000],[2193000,2196000,1453000],[2196000,2200000,1456000]],
     kisoIncome: [[4890000,1040000],[6550000,670000],[23500000,620000],
                  [24000000,480000],[24500000,320000],[25000000,160000],[Infinity,0]],
     kisoJumin: [[24000000,430000],[24500000,290000],[25000000,150000],[Infinity,0]],
@@ -584,6 +591,7 @@ const YEARS = {
   2027: {
     label: "令和9年分（2027年）", juminLabel: "令和10年度",
     kyuyoKojoMin: 740000,
+    kyuyoBands: [[2191000,2193000,1451000],[2193000,2196000,1453000],[2196000,2200000,1456000]],
     kisoIncome: [[4890000,1040000],[6550000,670000],[23500000,620000],
                  [24000000,480000],[24500000,320000],[25000000,160000],[Infinity,0]],
     kisoJumin: [[24000000,430000],[24500000,290000],[25000000,150000],[Infinity,0]],
@@ -622,14 +630,30 @@ const TOKUTEI_SHINZOKU = [[850000,630000,450000],[900000,610000,450000],[950000,
   [1000000,410000,410000],[1050000,310000,310000],[1100000,210000,210000],
   [1150000,110000,110000],[1200000,60000,60000],[1230000,30000,30000]];
 
-/* 扶養控除 [所得税, 住民税, 人的控除差(調整控除用)] */
-const FUYO_KOJO = {
-  child1618: [380000, 330000, 50000],
-  child1922: [630000, 450000, 180000],   // 特定扶養親族
-  child23:   [380000, 330000, 50000],
+/**
+ * 調整控除に使う「人的控除の差額」。
+ * これは地方税法上の定額であり、所得税と住民税の控除額の実差ではない。
+ * 特定親族特別控除・配偶者特別控除の差額は 0円（税源移譲時の差額を用いるため）。
+ * ここを「所得税控除額 − 住民税控除額」で計算すると調整控除を過大に計上する。
+ */
+const JINTEKI_SA = {
+  kiso: 50000,
+  haigushaKojo: [50000, 40000, 20000],   // 配偶者控除（本人所得 900万以下／950万以下／1,000万以下）
+  haigushaTokubetsu: 0,                  // 配偶者特別控除
+  fuyoIppan: 50000,                      // 一般の扶養控除
+  fuyoTokutei: 180000,                   // 特定扶養控除
+  shinzokuTokubetsu: 0,                  // 特定親族特別控除
+  kinroGakusei: 10000,
 };
 
-const KINRO_GAKUSEI = [270000, 260000, 10000];  // 勤労学生控除 [所得税, 住民税, 人的控除差]
+/* 扶養控除 [所得税, 住民税, 人的控除差(調整控除用)] */
+const FUYO_KOJO = {
+  child1618: [380000, 330000, JINTEKI_SA.fuyoIppan],
+  child1922: [630000, 450000, JINTEKI_SA.fuyoTokutei],   // 特定扶養親族
+  child23:   [380000, 330000, JINTEKI_SA.fuyoIppan],
+};
+
+const KINRO_GAKUSEI = [270000, 260000, JINTEKI_SA.kinroGakusei];  // 勤労学生控除 [所得税, 住民税, 人的控除差]
 
 /* 社会保険の適用拡大タイムライン（年金制度改正法・2025年6月成立） */
 const REGIMES = [
@@ -652,13 +676,23 @@ const FUYO_NINTEI_LIMIT = 1300000;   // 健康保険の被扶養者認定基準�
  * 正確な試算には「自治体の料率を入力する」モードを使うこと。
  */
 const KOKUHO_ESTIMATE = {
-  rate: 10.0,        // 所得割率（医療＋支援金＋子ども子育て支援）の目安
-  flat: 50000,       // 均等割（同上・1人あたり年額）の目安
-  careRate: 2.5,     // 介護納付金分（40〜64歳）の所得割率
+  rate: 10.6,        // 所得割率（医療＋後期支援金＋子ども子育て支援）
+  flat: 35000,       // 均等割（被保険者1人あたり・年額）
+  byosei: 30000,     // 平等割（1世帯あたり・年額）。東京23区など平等割のない自治体もある
+  careRate: 2.8,     // 介護納付金分（40〜64歳）の所得割率
   careFlat: 16000,   // 介護納付金分の均等割
-  cap: 1130000,      // 令和8年度の賦課限度額
+  careByosei: 6000,  // 介護納付金分の平等割
+  cap: 1130000,      // 令和8年度の賦課限度額（医療65万＋支援金26万＋介護17万＋子ども子育て支援3万）
   band: 0.30,        // 自治体差の目安（±30%）
 };
+
+/**
+ * 均等割・平等割の軽減（令和8年度）。所得割には適用されない。
+ * 判定所得 ≦ 43万円 ＋ 加算額×被保険者数（＋給与所得者等が2人以上の場合の10万円加算）
+ * 本ツールは単身世帯・給与所得者1人を前提としているため、被保険者数1・10万円加算なしで判定する。
+ */
+const KOKUHO_KEIGEN_BASE = 430000;
+const KOKUHO_KEIGEN = [[0, 0.7], [310000, 0.5], [570000, 0.2]];
 
 /* 健康保険の標準報酬月額（第1〜50級）。厚生年金は88,000〜650,000の範囲。 */
 const STD_GRADES = [58000,68000,78000,88000,98000,104000,110000,118000,126000,134000,
@@ -683,6 +717,8 @@ const man = n => (n/10000).toLocaleString("ja-JP", {maximumFractionDigits:1}) + 
 /** 給与所得控除後の給与所得金額 */
 function kyuyoShotoku(shunyu, P) {
   if (shunyu <= 0) return 0;
+  // 給与所得控除の最低保障額と計算式が切り替わる境界には、国税庁の表で定額となる帯がある
+  if (P.kyuyoBands) for (const [lo, hi, v] of P.kyuyoBands) if (shunyu >= lo && shunyu < hi) return v;
   let k;
   if (shunyu <= 3600000)      k = shunyu * 0.30 + 80000;
   else if (shunyu <= 6600000) k = shunyu * 0.20 + 440000;
@@ -748,7 +784,7 @@ function taxOf(shunyu, P, kojoI, kojoJ, jinteki, opt = {}) {
   const kazeiJ = Math.max(0, Math.floor((shotoku - kisoJ - kojoJ) / 1000) * 1000);
   let jumin = 0;
   if (!hikazei) {
-    const shotokuwari = Math.max(0, Math.floor(kazeiJ * 0.10) - chouseiKojo(kazeiJ, jinteki + 50000));
+    const shotokuwari = Math.max(0, Math.floor(kazeiJ * 0.10) - chouseiKojo(kazeiJ, jinteki + JINTEKI_SA.kiso));
     jumin = Math.floor(shotokuwari / 100) * 100 + (opt.juminFlat ?? 5000);
   }
   return { shotoku, kisoI, kisoJ, kazeiI, kazeiJ, tax, jumin, hikazei };
@@ -759,13 +795,14 @@ function taxOf(shunyu, P, kojoI, kojoJ, jinteki, opt = {}) {
 /** 国民健康保険の料率を、選択されたモードに応じて決める */
 function kokuhoParams(cfg) {
   if (cfg.kokuhoMode === "manual") {
-    return { rate: cfg.pKokuhoRate, flat: cfg.pKokuhoFlat, cap: cfg.pKokuhoCap,
-             estimated: false, band: 0 };
+    return { rate: cfg.pKokuhoRate, flat: cfg.pKokuhoFlat, byosei: cfg.pKokuhoByosei,
+             cap: cfg.pKokuhoCap, estimated: false, band: 0 };
   }
   const E = KOKUHO_ESTIMATE;
   return {
-    rate: E.rate + (cfg.age40 ? E.careRate : 0),
-    flat: E.flat + (cfg.age40 ? E.careFlat : 0),
+    rate:   E.rate   + (cfg.age40 ? E.careRate   : 0),
+    flat:   E.flat   + (cfg.age40 ? E.careFlat   : 0),
+    byosei: E.byosei + (cfg.age40 ? E.careByosei : 0),
     cap: E.cap, estimated: true, band: E.band,
   };
 }
@@ -821,11 +858,17 @@ function socialInsurance(shunyu, cfg) {
   const k = kokuhoParams(cfg);
   const shotoku = kyuyoShotoku(shunyu, cfg.P);
   const kokuhoBase = Math.max(0, shotoku - 430000);   // 基礎控除43万円を控除した賦課基準額
-  const kokuho = Math.min(k.cap, Math.floor(kokuhoBase * k.rate / 100) + k.flat);
+  // 均等割・平等割の軽減（所得割には適用しない）
+  let keigen = 0;
+  for (const [add, r] of KOKUHO_KEIGEN)
+    if (shotoku <= KOKUHO_KEIGEN_BASE + add) { keigen = r; break; }
+  const flatPart = Math.floor((k.flat + k.byosei) * (1 - keigen));
+  const kokuho = Math.min(k.cap, Math.floor(kokuhoBase * k.rate / 100) + flatPart);
   const kokunen = cfg.isStudent ? 0 : cfg.pKokunen * 12;   // 学生納付特例で猶予
   const koyo = cfg.weekly >= 1 ? Math.floor(shunyu * cfg.pKoyo / 100) : 0;
   return { status:"kokuho", health:kokuho, pension:kokunen, koyo, total: kokuho + kokunen + koyo,
-           studentDeferred: cfg.isStudent, kokuhoEstimated: k.estimated, kokuhoBand: k.band };
+           studentDeferred: cfg.isStudent, kokuhoEstimated: k.estimated, kokuhoBand: k.band,
+           kokuhoKeigen: keigen };
 }
 
 /* ========================= 扶養者側の計算 ========================= */
@@ -837,17 +880,18 @@ function supporterDeduction(role, honninShotoku, P, supporterShotoku) {
 
   if (role === "spouse") {
     if (tier < 0) return [0,0,0];
-    if (honninShotoku <= P.fuyoLimit) return [HAIGUSHA_KOJO_I[tier], HAIGUSHA_KOJO_J[tier], 50000];
+    if (honninShotoku <= P.fuyoLimit)
+      return [HAIGUSHA_KOJO_I[tier], HAIGUSHA_KOJO_J[tier], JINTEKI_SA.haigushaKojo[tier]];
     const i = lookup(HAIGUSHA_TOKUBETSU_I, honninShotoku, tier+1);
     const j = lookup(HAIGUSHA_TOKUBETSU_J, honninShotoku, tier+1);
-    return [i, j, i > 0 ? Math.min(50000, i - j) : 0];
+    return [i, j, JINTEKI_SA.haigushaTokubetsu];   // 配偶者特別控除の人的控除差は0円
   }
 
   if (role === "child1922") {
     if (honninShotoku <= P.fuyoLimit) return FUYO_KOJO.child1922;
     const i = lookup(TOKUTEI_SHINZOKU, honninShotoku, 1);
     const j = lookup(TOKUTEI_SHINZOKU, honninShotoku, 2);
-    return [i, j, Math.max(0, i - j)];
+    return [i, j, JINTEKI_SA.shinzokuTokubetsu];   // 特定親族特別控除の人的控除差は0円
   }
 
   if (role === "child1618" || role === "child23") {
@@ -949,14 +993,14 @@ function walls(cfg) {
     const fuyoShunyu = toShunyu(P.fuyoLimit);
     if (cfg.role === "spouse") {
       add(fuyoShunyu, "配偶者控除の壁",
-          "配偶者控除から配偶者特別控除に移ります。控除額は満額のままで、この時点では手取りは減りません。", "family");
+          "配偶者控除から配偶者特別控除に移ります。控除額38万円は維持されますが、住民税の調整控除の人的控除差の対象から外れるため、扶養者の課税所得（住民税）が200万円以下の場合は住民税が2,500円増えます。", "family");
       add(toShunyu(950000), "配偶者特別控除の逓減開始",
           "扶養者の配偶者特別控除38万円が段階的に減り始め、扶養者の税額が増えていきます。", "family");
       add(toShunyu(1330000), "配偶者特別控除の消滅",
           "扶養者の配偶者特別控除がゼロになります。", "family");
     } else if (cfg.role === "child1922") {
       add(fuyoShunyu, "特定扶養控除の壁",
-          "特定扶養控除から特定親族特別控除に移ります。控除額63万円は維持されるため、扶養者の税額は変わりません。", "family");
+          "特定扶養控除から特定親族特別控除に移ります。控除額63万円は維持されますが、住民税の調整控除の人的控除差（18万円）の対象から外れるため、扶養者の課税所得（住民税）が200万円以下の場合は住民税が9,000円増えます。", "family");
       add(toShunyu(850000), "特定親族特別控除の逓減開始",
           "扶養者の控除63万円が段階的に減り始め、扶養者の税額が増えていきます。", "family");
       add(toShunyu(1230000), "特定親族特別控除の消滅",
@@ -999,7 +1043,7 @@ const F = {
   kidsCount:$("kidsCount"), uniKids:$("uniKids"), uniType:$("uniType"),
   pHealth:$("pHealth"), pCare:$("pCare"), pKodomo:$("pKodomo"), pPension:$("pPension"),
   pKoyo:$("pKoyo"), pKokunen:$("pKokunen"), pKokuhoRate:$("pKokuhoRate"),
-  pKokuhoFlat:$("pKokuhoFlat"), pKokuhoCap:$("pKokuhoCap"),
+  pKokuhoFlat:$("pKokuhoFlat"), pKokuhoByosei:$("pKokuhoByosei"), pKokuhoCap:$("pKokuhoCap"),
   pJuminFlat:$("pJuminFlat"), pHikazei:$("pHikazei"),
 };
 const DEFAULTS = {};
@@ -1031,7 +1075,8 @@ function readConfig() {
     uniType: F.uniType.value,
     pHealth:num(F.pHealth), pCare:num(F.pCare), pKodomo:num(F.pKodomo),
     pPension:num(F.pPension), pKoyo:num(F.pKoyo), pKokunen:num(F.pKokunen),
-    pKokuhoRate:num(F.pKokuhoRate), pKokuhoFlat:num(F.pKokuhoFlat), pKokuhoCap:num(F.pKokuhoCap),
+    pKokuhoRate:num(F.pKokuhoRate), pKokuhoFlat:num(F.pKokuhoFlat),
+    pKokuhoByosei:num(F.pKokuhoByosei), pKokuhoCap:num(F.pKokuhoCap),
     pJuminFlat:num(F.pJuminFlat), pHikazei:num(F.pHikazei),
   };
 }
@@ -1060,9 +1105,10 @@ function render() {
   const manual = cfg.kokuhoMode === "manual";
   $("kokuhoManual").hidden = !manual;
   const kp = kokuhoParams(cfg);
+  const kpDesc = `所得割 ${kp.rate.toFixed(2)}％・均等割 ${kp.flat.toLocaleString()}円・平等割 ${kp.byosei.toLocaleString()}円`;
   $("kokuhoNote").textContent = manual
-    ? `所得割 ${kp.rate}％・均等割 ${kp.flat.toLocaleString()}円で計算します。`
-    : `所得割 ${kp.rate}％・均等割 ${kp.flat.toLocaleString()}円で計算します。自治体差により誤差 ±${Math.round(kp.band*100)}％程度。`;
+    ? `${kpDesc}で計算します。`
+    : `${kpDesc}で計算します。これは公式な全国標準値ではなく本ツール独自の仮定値です（誤差 ±${Math.round(kp.band*100)}％程度）。`;
 
   const r = simulate(cfg.income, cfg);
   renderSummary(r, cfg);
@@ -1093,7 +1139,7 @@ function renderSummary(r, cfg) {
     $("tParent").style.color = r.sup.increase > 0 ? "var(--st-critical)" : "";
     $("tParentSub").textContent = r.sup.increase > 0
       ? `年収${man(cfg.supporterIncome)}の扶養者の税が増えます`
-      : "控除は満額のまま。扶養者の税は増えていません";
+      : "この年収では扶養者の税は増えていません";
   } else {
     $("tParent").textContent = "—";
     $("tParent").style.color = "";
@@ -1137,8 +1183,11 @@ function renderSummary(r, cfg) {
   }
   if (r.si.status === "kokuho" && r.si.kokuhoEstimated) {
     const lo = r.si.health * (1 - r.si.kokuhoBand), hi = r.si.health * (1 + r.si.kokuhoBand);
+    const kg = r.si.kokuhoKeigen
+      ? `均等割・平等割の <b>${Math.round(r.si.kokuhoKeigen*100)}％軽減</b> を適用しています。`
+      : "均等割・平等割の軽減の対象外です。";
     push("warn", "!", "国民健康保険料は概算です",
-      `いまの条件では国民健康保険に加入する計算になり、保険料は <b>${yen(r.si.health)}</b> と試算されています。ただし国保の料率は自治体ごとに大きく異なり、実際には <b>${yen(lo)}〜${yen(hi)}</b> 程度の幅があります。<br>正確に知りたい場合は、上の「国民健康保険料の計算方法」で <b>「お住まいの自治体の料率を入力する」</b> を選び、市区町村のホームページに掲載されている料率を入力してください。`);
+      `いまの条件では国民健康保険に加入する計算になり、保険料は <b>${yen(r.si.health)}</b> と試算されています。${kg}<br>ただしこの金額は<b>公式な全国標準値ではなく、本ツール独自の仮定値</b>による概算です。国保の料率は自治体ごとに大きく異なり、実際には <b>${yen(lo)}〜${yen(hi)}</b> 程度の幅があります。<br>正確に知りたい場合は、上の「国民健康保険料の計算方法」で <b>「お住まいの自治体の料率を入力する」</b> を選び、市区町村のホームページに掲載されている料率（所得割・均等割・平等割）を入力してください。`);
   }
   if (r.si.status === "kokuho" && r.si.studentDeferred) {
     push("warn", "!", "国民年金は学生納付特例を前提にしています",
@@ -1299,7 +1348,7 @@ function renderStack(r, cfg) {
     ["手取り", r.net, "額面から下の3項目を差し引いた金額"],
     ["社会保険料 合計", si.total,
       si.status === "shaho" ? `健康保険 ${yen(si.health)}／厚生年金 ${yen(si.pension)}／雇用保険 ${yen(si.koyo)}`
-      : si.status === "kokuho" ? `国民健康保険 ${yen(si.health)}${si.kokuhoEstimated?"（概算・自治体差±"+Math.round(si.kokuhoBand*100)+"%）":"（入力した料率で計算）"}／国民年金 ${yen(si.pension)}${si.studentDeferred?"（学生納付特例）":""}／雇用保険 ${yen(si.koyo)}`
+      : si.status === "kokuho" ? `国民健康保険 ${yen(si.health)}${si.kokuhoEstimated?"（独自仮定による概算・自治体差±"+Math.round(si.kokuhoBand*100)+"%）":"（入力した料率で計算）"}${si.kokuhoKeigen?"／均等割・平等割 "+Math.round(si.kokuhoKeigen*100)+"%軽減":""}／国民年金 ${yen(si.pension)}${si.studentDeferred?"（学生納付特例）":""}／雇用保険 ${yen(si.koyo)}`
       : `扶養内のため健康保険・年金の本人負担なし／雇用保険 ${yen(si.koyo)}`],
     ["所得税", r.tax, `課税所得 ${yen(r.taxDetail.kazeiI)}（基礎控除 ${yen(r.taxDetail.kisoI)}）・復興特別所得税込み`],
     ["住民税", r.jumin, r.taxDetail.hikazei ? "非課税限度額以下のため非課税"

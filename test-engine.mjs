@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const script = html.split("<script>")[1].split("</script>")[0];
 const engine = script.split("/* ========================= UI ========================= */")[0];
-const mod = new Function(engine + "\nreturn {YEARS,kyuyoShotoku,incomeForShotoku,incomeTax,taxOf,simulate,walls,socialInsurance,supporterDeduction,lookup,TOKUTEI_SHINZOKU,HAIGUSHA_TOKUBETSU_I,HAIGUSHA_KOJO_I,stdMonthly,REGIMES,man,yen};")();
-const { YEARS, kyuyoShotoku, incomeForShotoku, taxOf, simulate, walls, socialInsurance,
+const mod = new Function(engine + "\nreturn {JINTEKI_SA,KOKUHO_ESTIMATE,YEARS,kyuyoShotoku,incomeForShotoku,incomeTax,taxOf,simulate,walls,socialInsurance,supporterDeduction,lookup,TOKUTEI_SHINZOKU,HAIGUSHA_TOKUBETSU_I,HAIGUSHA_KOJO_I,stdMonthly,REGIMES,man,yen};")();
+const { JINTEKI_SA, KOKUHO_ESTIMATE, YEARS, kyuyoShotoku, incomeForShotoku, taxOf, simulate, walls, socialInsurance,
         supporterDeduction, lookup, TOKUTEI_SHINZOKU, HAIGUSHA_TOKUBETSU_I,
         HAIGUSHA_KOJO_I, stdMonthly } = mod;
 
@@ -24,7 +24,8 @@ const base = (year, over = {}) => ({
   weekly: 1, firmSize: 51, regimeId: year === 2025 ? "pre2610" : "post2610",
   kidsCount: 1, uniKids: 0, uniType: "private",
   pHealth: 9.85, pCare: 1.62, pKodomo: 0.23, pPension: 18.30, pKoyo: 0.50,
-  pKokunen: 17920, kokuhoMode: "estimate", pKokuhoRate: 12.5, pKokuhoFlat: 66300, pKokuhoCap: 1130000,
+  pKokunen: 17920, kokuhoMode: "estimate", pKokuhoRate: 10.61, pKokuhoFlat: 35000,
+  pKokuhoByosei: 30000, pKokuhoCap: 1130000,
   pJuminFlat: 5000, pHikazei: 450000, ...over,
 });
 // 「◯◯万円の壁」は社会保険料控除を織り込まない法令上のラインなので、
@@ -153,15 +154,87 @@ ok("令和7年分では160万円の壁が出る", wl25.some(w => w.amount === 16
 
 console.log("──────── 国民健康保険の2モード ────────");
 const kEst = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "estimate" }));
-const kMan = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "manual" }));
+const kMan = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "manual", pKokuhoRate: 14.0, pKokuhoFlat: 50000, pKokuhoByosei: 45000 }));
 ok("概算モードは概算フラグが立つ", kEst.kokuhoEstimated, true);
 ok("自治体入力モードは概算フラグが立たない", kMan.kokuhoEstimated, false);
 info("概算モードの国保料（年収140万）", kEst.health.toLocaleString());
-info("自治体入力モード（12.5%/66,300円）の国保料", kMan.health.toLocaleString());
+info("自治体入力モード（14.0%/均等5万/平等4.5万）の国保料", kMan.health.toLocaleString());
 ok("入力した料率が実際に効いている", kEst.health !== kMan.health, true);
 const kCare = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "estimate", age40: true }));
 ok("40歳以上は介護納付金分が上乗せされる", kCare.health > kEst.health, true);
 ok("賦課限度額113万円が効く", socialInsurance(20000000, base(2026, { weekly: 0, hasSupporter: false })).health, 1130000);
+
+
+console.log("──────── 一次資料監査①: 給与所得控除の境界帯（令和8年分） ────────");
+ok("2,190,999円 → 通常計算", kyuyoShotoku(2190999, YEARS[2026]), 1450999);
+ok("2,191,000円 → 定額 1,451,000", kyuyoShotoku(2191000, YEARS[2026]), 1451000);
+ok("2,192,999円 → 定額 1,451,000", kyuyoShotoku(2192999, YEARS[2026]), 1451000);
+ok("2,193,000円 → 定額 1,453,000", kyuyoShotoku(2193000, YEARS[2026]), 1453000);
+ok("2,195,999円 → 定額 1,453,000", kyuyoShotoku(2195999, YEARS[2026]), 1453000);
+ok("2,196,000円 → 定額 1,456,000", kyuyoShotoku(2196000, YEARS[2026]), 1456000);
+ok("2,199,999円 → 定額 1,456,000", kyuyoShotoku(2199999, YEARS[2026]), 1456000);
+ok("2,200,000円 → 通常計算 1,460,000", kyuyoShotoku(2200000, YEARS[2026]), 1460000);
+ok("帯は令和9年分にも適用される", kyuyoShotoku(2194000, YEARS[2027]), 1453000);
+ok("帯は令和7年分には適用されない", kyuyoShotoku(2194000, YEARS[2025]), 1455800);
+ok("帯は単調非減少（逆転しない）", (() => {
+  let prev = -1;
+  for (let x = 2180000; x <= 2210000; x += 1000) {
+    const v = kyuyoShotoku(x, YEARS[2026]); if (v < prev) return false; prev = v;
+  } return true; })(), true);
+
+console.log("──────── 一次資料監査②: 住民税の控除の下限（58万→62万） ────────");
+ok("令和8年分 配偶者 給与収入136万は配偶者控除33万（住民税）",
+   supporterDeduction("spouse", kyuyoShotoku(1360000, YEARS[2026]), YEARS[2026], 4360000)[1], 330000);
+ok("令和8年分 配偶者 給与収入137万は配偶者特別控除33万（住民税）",
+   supporterDeduction("spouse", kyuyoShotoku(1370000, YEARS[2026]), YEARS[2026], 4360000)[1], 330000);
+ok("令和8年分 特定親族 給与収入169万の住民税控除は45万",
+   supporterDeduction("child1922", kyuyoShotoku(1690000, YEARS[2026]), YEARS[2026], 4360000)[1], 450000);
+ok("令和8年分 特定親族 給与収入170万（合計所得96万）は41万",
+   supporterDeduction("child1922", kyuyoShotoku(1700000, YEARS[2026]), YEARS[2026], 4360000)[1], 410000);
+ok("令和7年分は下限が58万のまま（給与収入123万で扶養）",
+   supporterDeduction("spouse", kyuyoShotoku(1230000, YEARS[2025]), YEARS[2025], 4360000)[1], 330000);
+
+console.log("──────── 一次資料監査③: 基礎控除2,350万円超の逓減 ────────");
+ok("合計所得2,400万円の基礎控除", lookup(YEARS[2026].kisoIncome, 24000000), 480000);
+ok("合計所得2,450万円の基礎控除", lookup(YEARS[2026].kisoIncome, 24500000), 320000);
+ok("合計所得2,500万円の基礎控除", lookup(YEARS[2026].kisoIncome, 25000000), 160000);
+ok("合計所得2,500万円超の基礎控除", lookup(YEARS[2026].kisoIncome, 25000001), 0);
+
+console.log("──────── 一次資料監査④: 調整控除の人的控除差 ────────");
+ok("特定親族特別控除の人的控除差は0円", JINTEKI_SA.shinzokuTokubetsu, 0);
+ok("配偶者特別控除の人的控除差は0円", JINTEKI_SA.haigushaTokubetsu, 0);
+ok("特定扶養控除の人的控除差は18万円", JINTEKI_SA.fuyoTokutei, 180000);
+ok("配偶者控除の人的控除差は5万／4万／2万", JINTEKI_SA.haigushaKojo, [50000,40000,20000]);
+ok("特定親族特別控除が効く区間で差額0が返る",
+   supporterDeduction("child1922", kyuyoShotoku(1700000, YEARS[2026]), YEARS[2026], 4360000)[2], 0);
+ok("特定扶養控除の区間では18万が返る",
+   supporterDeduction("child1922", kyuyoShotoku(1360000, YEARS[2026]), YEARS[2026], 4360000)[2], 180000);
+ok("配偶者特別控除が効く区間で差額0が返る",
+   supporterDeduction("spouse", kyuyoShotoku(1700000, YEARS[2026]), YEARS[2026], 4360000)[2], 0);
+{
+  const c = base(2026, { role: "child1922", supporterIncome: 6000000, weekly: 0 });
+  const at170 = simulate(1700000, c).sup;
+  info("親の住民税（子の年収170万・修正後）", at170.jumin.toLocaleString());
+  info("親の増税額（子の年収170万・修正後）", at170.increase.toLocaleString());
+}
+
+console.log("──────── 一次資料監査⑤: 国保（平等割・軽減） ────────");
+ok("概算値に平等割が入っている", KOKUHO_ESTIMATE.byosei > 0, true);
+{
+  const c = base(2026, { weekly: 0, role: "single", hasSupporter: false });
+  const k130 = socialInsurance(1300000, c), k180 = socialInsurance(1800000, c);
+  ok("年収130万（給与所得56万）は5割軽減", k130.kokuhoKeigen, 0.5);
+  ok("年収180万（給与所得106万）は軽減なし", k180.kokuhoKeigen, 0);
+  ok("年収117万（給与所得43万）は7割軽減", socialInsurance(1170000, c).kokuhoKeigen, 0.7);
+  ok("年収174万（給与所得100万）は2割軽減", socialInsurance(1740000, c).kokuhoKeigen, 0.2);
+  info("年収130万の国保料（軽減後）", k130.health.toLocaleString());
+  info("年収180万の国保料（軽減なし）", k180.health.toLocaleString());
+  ok("軽減により低所得側の保険料が下がる", k130.health < k180.health, true);
+  const cB = base(2026, { weekly: 0, role: "single", hasSupporter: false, kokuhoMode: "manual", pKokuhoByosei: 0 });
+  ok("平等割0を入力すると保険料が下がる",
+     socialInsurance(1800000, cB).health < socialInsurance(1800000,
+       base(2026, { weekly: 0, role: "single", hasSupporter: false, kokuhoMode: "manual" })).health, true);
+}
 
 console.log();
 console.table(R.map(([n,g,w,s]) => ({ 検証項目:n, 結果:g, 期待:w, 判定:s })));
