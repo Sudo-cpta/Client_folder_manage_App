@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
 const script = html.split("<script>")[1].split("</script>")[0];
 const engine = script.split("/* ========================= UI ========================= */")[0];
-const mod = new Function(engine + "\nreturn {JINTEKI_SA,KOKUHO_ESTIMATE,YEARS,kyuyoShotoku,incomeForShotoku,incomeTax,taxOf,simulate,walls,socialInsurance,supporterDeduction,lookup,TOKUTEI_SHINZOKU,HAIGUSHA_TOKUBETSU_I,HAIGUSHA_KOJO_I,stdMonthly,REGIMES,man,yen};")();
-const { JINTEKI_SA, KOKUHO_ESTIMATE, YEARS, kyuyoShotoku, incomeForShotoku, taxOf, simulate, walls, socialInsurance,
+const mod = new Function(engine + "\nreturn {chouseiKojo,hikazeiLimits,fuyoNinteiLimit,tashiLimitShotoku,FUYO_NINTEI_LIMIT_1922,JINTEKI_SA,KOKUHO_ESTIMATE,YEARS,kyuyoShotoku,incomeForShotoku,incomeTax,taxOf,simulate,walls,socialInsurance,supporterDeduction,lookup,TOKUTEI_SHINZOKU,HAIGUSHA_TOKUBETSU_I,HAIGUSHA_KOJO_I,stdMonthly,REGIMES,man,yen};")();
+const { chouseiKojo, hikazeiLimits, fuyoNinteiLimit, tashiLimitShotoku,
+        FUYO_NINTEI_LIMIT_1922, JINTEKI_SA, KOKUHO_ESTIMATE, YEARS, kyuyoShotoku, incomeForShotoku, taxOf, simulate, walls, socialInsurance,
         supporterDeduction, lookup, TOKUTEI_SHINZOKU, HAIGUSHA_TOKUBETSU_I,
         HAIGUSHA_KOJO_I, stdMonthly } = mod;
 
@@ -25,13 +26,13 @@ const base = (year, over = {}) => ({
   kidsCount: 1, uniKids: 0, uniType: "private",
   pHealth: 9.85, pCare: 1.62, pKodomo: 0.23, pPension: 18.30, pKoyo: 0.50,
   pKokunen: 17920, kokuhoMode: "estimate", pKokuhoRate: 10.61, pKokuhoFlat: 35000,
-  pKokuhoByosei: 30000, pKokuhoCap: 1130000,
-  pJuminFlat: 5000, pHikazei: 450000, ...over,
+  pKokuhoByosei: 30000, pKokuhoCap: 960000,
+  pJuminFlat: 5000, pKyuchi: 350000, ...over,
 });
 // 「◯◯万円の壁」は社会保険料控除を織り込まない法令上のラインなので、
 // 社会保険料控除ゼロで taxOf を直接叩いて検証する。
 const tax = (year, shunyu) => {
-  const r = taxOf(shunyu, YEARS[year], 0, 0, 0, { hikazeiLimit: 450000, juminFlat: 5000 });
+  const r = taxOf(shunyu, YEARS[year], 0, 0, 0, { hikazeiBase: 350000, juminFlat: 5000 });
   return { it: r.tax, jt: r.jumin };
 };
 
@@ -94,8 +95,10 @@ const si = (shunyu, over) => socialInsurance(shunyu, base(2026, over)).status;
 ok("2026年9月まで・年収105万は扶養内", si(1050000, { regimeId: "pre2610" }), "fuyou");
 ok("2026年9月まで・年収106万で社保加入", si(1060000, { regimeId: "pre2610" }), "shaho");
 ok("2026年10月以降・年収80万でも社保加入（賃金要件撤廃）", si(800000, { regimeId: "post2610" }), "shaho");
-ok("2026年10月以降・週20時間未満なら年収129万は扶養内", si(1290000, { regimeId: "post2610", weekly: 0 }), "fuyou");
-ok("2026年10月以降・週20時間未満で年収130万は国保", si(1300000, { regimeId: "post2610", weekly: 0 }), "kokuho");
+ok("2026年10月以降・週20時間未満なら年収129万は扶養内（23歳以上）",
+   si(1290000, { regimeId: "post2610", weekly: 0, role: "child23" }), "fuyou");
+ok("2026年10月以降・週20時間未満で年収130万は国保（23歳以上）",
+   si(1300000, { regimeId: "post2610", weekly: 0, role: "child23" }), "kokuho");
 ok("従業員40人・2026年10月時点は対象外", si(1500000, { regimeId: "post2610", firmSize: 36 }), "kokuho");
 ok("従業員40人・2027年10月以降は加入", si(1500000, { regimeId: "post2710", firmSize: 36 }), "shaho");
 ok("学生は週20時間でも適用除外", si(1200000, { isStudent: true }), "fuyou");
@@ -117,9 +120,9 @@ ok("令和10年分 基礎控除99万 → 168万円", incomeForShotoku(990000, YE
 ok("令和10年分 扶養要件62万 → 131万円", incomeForShotoku(620000, YEARS[2028]), 1310000);
 
 console.log("──────── 手取り逆転と家族への影響 ────────");
-const c25 = base(2025, { weekly: 0, regimeId: "pre2610" });
+const c25 = base(2025, { weekly: 0, regimeId: "pre2610", role: "child23" });
 const n129 = simulate(1290000, c25).net, n130 = simulate(1300000, c25).net;
-info("令和7年分 年収129万の手取り", n129.toLocaleString());
+info("令和7年分 年収129万の手取り（23歳以上の子）", n129.toLocaleString());
 info("令和7年分 年収130万の手取り（扶養外れ）", n130.toLocaleString());
 ok("130万円の壁で手取りが逆転する", n130 < n129, true);
 
@@ -153,16 +156,16 @@ ok("令和7年分では160万円の壁が出る", wl25.some(w => w.amount === 16
 
 
 console.log("──────── 国民健康保険の2モード ────────");
-const kEst = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "estimate" }));
-const kMan = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "manual", pKokuhoRate: 14.0, pKokuhoFlat: 50000, pKokuhoByosei: 45000 }));
+const kEst = socialInsurance(1400000, base(2026, { weekly: 0, role: "child23", kokuhoMode: "estimate" }));
+const kMan = socialInsurance(1400000, base(2026, { weekly: 0, role: "child23", kokuhoMode: "manual", pKokuhoRate: 14.0, pKokuhoFlat: 50000, pKokuhoByosei: 45000 }));
 ok("概算モードは概算フラグが立つ", kEst.kokuhoEstimated, true);
 ok("自治体入力モードは概算フラグが立たない", kMan.kokuhoEstimated, false);
 info("概算モードの国保料（年収140万）", kEst.health.toLocaleString());
 info("自治体入力モード（14.0%/均等5万/平等4.5万）の国保料", kMan.health.toLocaleString());
 ok("入力した料率が実際に効いている", kEst.health !== kMan.health, true);
-const kCare = socialInsurance(1400000, base(2026, { weekly: 0, kokuhoMode: "estimate", age40: true }));
+const kCare = socialInsurance(1400000, base(2026, { weekly: 0, role: "child23", kokuhoMode: "estimate", age40: true }));
 ok("40歳以上は介護納付金分が上乗せされる", kCare.health > kEst.health, true);
-ok("賦課限度額113万円が効く", socialInsurance(20000000, base(2026, { weekly: 0, hasSupporter: false })).health, 1130000);
+ok("40歳未満の賦課限度額は96万円", socialInsurance(20000000, base(2026, { weekly: 0, hasSupporter: false })).health, 960000);
 
 
 console.log("──────── 一次資料監査①: 給与所得控除の境界帯（令和8年分） ────────");
@@ -234,6 +237,71 @@ ok("概算値に平等割が入っている", KOKUHO_ESTIMATE.byosei > 0, true);
   ok("平等割0を入力すると保険料が下がる",
      socialInsurance(1800000, cB).health < socialInsurance(1800000,
        base(2026, { weekly: 0, role: "single", hasSupporter: false, kokuhoMode: "manual" })).health, true);
+}
+
+
+console.log("──────── PRレビュー① 調整控除は合計所得2,500万円超で適用なし ────────");
+ok("合計所得2,500万円ちょうどは適用あり", chouseiKojo(3000000, 230000, 25000000) > 0, true);
+ok("合計所得2,500万円超は0円", chouseiKojo(3000000, 230000, 25000001), 0);
+ok("2,500万円超でも課税所得が小さい場合は0円", chouseiKojo(100000, 230000, 30000000), 0);
+
+console.log("──────── PRレビュー② 19〜22歳の被扶養者認定は150万円未満 ────────");
+ok("19〜22歳の認定基準は150万円", fuyoNinteiLimit(base(2026, { role: "child1922" })), 1500000);
+ok("配偶者は130万円のまま", fuyoNinteiLimit(base(2026, { role: "spouse" })), 1300000);
+ok("23歳以上の子も130万円のまま", fuyoNinteiLimit(base(2026, { role: "child23" })), 1300000);
+{
+  const c = base(2026, { role: "child1922", weekly: 0 });
+  ok("19〜22歳・年収140万は扶養内のまま", socialInsurance(1400000, c).status, "fuyou");
+  ok("19〜22歳・年収149万も扶養内", socialInsurance(1490000, c).status, "fuyou");
+  ok("19〜22歳・年収150万で扶養を外れる", socialInsurance(1500000, c).status, "kokuho");
+  const cs = base(2026, { role: "spouse", weekly: 0 });
+  ok("配偶者・年収140万は扶養外", socialInsurance(1400000, cs).status, "kokuho");
+  const w = walls(c);
+  ok("壁の一覧に150万円の壁が出る", w.some(x => x.amount === 1500000 && x.name.includes("150万円")), true);
+  ok("19〜22歳に130万円の壁は出ない", w.some(x => x.amount === 1300000), false);
+}
+
+console.log("──────── PRレビュー③ 住民税の非課税限度額（扶養人数・級地） ────────");
+ok("単身・1級地の均等割非課税限度額", hikazeiLimits(350000, 0).kintou, 450000);
+ok("単身・1級地の所得割非課税限度額", hikazeiLimits(350000, 0).shotokuwari, 450000);
+ok("扶養1人・1級地の均等割", hikazeiLimits(350000, 1).kintou, 1010000);
+ok("扶養1人・1級地の所得割", hikazeiLimits(350000, 1).shotokuwari, 1120000);
+ok("扶養2人・1級地の所得割", hikazeiLimits(350000, 2).shotokuwari, 1470000);
+ok("3級地・単身の限度額", hikazeiLimits(280000, 0).kintou, 380000);
+{
+  // 所得割は非課税だが均等割は課税、という区間が存在する
+  const r = taxOf(1790000, YEARS[2026], 0, 0, 0, { hikazeiBase: 350000, juminFlat: 5000, dependents: 1 });
+  ok("扶養1人・給与収入179万（合計所得105万）は均等割のみ課税", r.jumin, 5000);
+  ok("　同上：所得割は非課税", r.wariHikazei, true);
+  ok("　同上：均等割は課税", r.kintouHikazei, false);
+  const lowSup = simulate(1000000, base(2026, { role:"child1922", supporterIncome: 1900000, weekly: 0 }));
+  info("扶養者の年収190万・本人100万のときの扶養者の住民税", lowSup.sup.jumin.toLocaleString());
+}
+
+console.log("──────── PRレビュー④ 多子世帯：特定親族は合計所得95万円まで算入 ────────");
+ok("19〜22歳の算入上限は合計所得95万円", tashiLimitShotoku("child1922", YEARS[2026]), 950000);
+ok("それ以外は扶養の所得要件", tashiLimitShotoku("child23", YEARS[2026]), 620000);
+ok("令和7年分では給与収入160万円に相当",
+   incomeForShotoku(tashiLimitShotoku("child1922", YEARS[2025]), YEARS[2025]), 1600000);
+ok("令和8年分では給与収入169万円に相当",
+   incomeForShotoku(tashiLimitShotoku("child1922", YEARS[2026]), YEARS[2026]), 1690000);
+{
+  const w = walls(base(2026, { role: "child1922", kidsCount: 3, uniKids: 2 }));
+  const tw = w.find(x => x.kind === "tuition");
+  ok("多子世帯の壁が136万円ではなく169万円になる", tw.amount, 1690000);
+  const w23 = walls(base(2026, { role: "child23", kidsCount: 3, uniKids: 2 }));
+  ok("23歳以上は従来どおり136万円", w23.find(x => x.kind === "tuition").amount, 1360000);
+}
+
+console.log("──────── PRレビュー⑤ 国保の賦課限度額は区分別の合計 ────────");
+{
+  const young = base(2026, { weekly: 0, role: "single", hasSupporter: false });
+  const old40 = base(2026, { weekly: 0, role: "single", hasSupporter: false, age40: true });
+  ok("40歳未満の限度額は96万円（介護分を含まない）",
+     socialInsurance(30000000, young).health, 960000);
+  ok("40〜64歳の限度額は113万円", socialInsurance(30000000, old40).health, 1130000);
+  ok("概算値に区分別の限度額が入っている",
+     KOKUHO_ESTIMATE.capBase + KOKUHO_ESTIMATE.capCare, 1130000);
 }
 
 console.log();
